@@ -1,0 +1,34 @@
+# Role -> row-level filter and column-level visibility mapping.
+# Substituted into {ACCESS_SCOPE_FILTER} AFTER SQL generation (doc §9.2) —
+# the LLM never controls this substitution and cannot see these values.
+
+roles:
+  admin:
+    row_filter: "TRUE"
+    denied_columns: []
+
+  region_manager:
+    row_filter: "REGION = {employee_region}"
+    denied_columns: [DSA, DME, CONNECTOR_NAME]
+
+  branch_manager:
+    row_filter: "BRANCH_NAME = {employee_branch}"
+    denied_columns: [DSA, DME, CONNECTOR_NAME]
+
+  collections_leadership:
+    row_filter: "TRUE"
+    denied_columns: []
+
+  credit_leadership:
+    row_filter: "TRUE"
+    denied_columns: []
+
+  analyst_readonly:
+    row_filter: "TRUE"
+    denied_columns: [DSA, DME, CONNECTOR_NAME, LOAN_AGREEMENT_NO, UCID, CUSTOMER_ID]
+
+# Fallback applied when an employee's role is not found in this file.
+# Fails closed: no rows, no columns beyond the standard-financial tier.
+default_deny:
+  row_filter: "FALSE"
+  denied_columns: [DSA, DME, CONNECTOR_NAME, LOAN_AGREEMENT_NO, UCID, CUSTOMER_ID]

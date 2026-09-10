@@ -1,0 +1,245 @@
+# Schema card: the ONLY grounding the SQL Generator model receives.
+# It gets column names, types, and glossary references — never row values.
+# Columns marked pending_sme_definition are withheld from the LLM's
+# grounding context entirely until the credit/risk data-dictionary owner
+# signs off (see doc §2.1.2 "SME dependency").
+
+domains:
+  loan_identity:
+    table: main
+    columns:
+      - name: LOAN_AGREEMENT_NO
+        type: string
+        pii_tier: pseudo_identifier
+        note: Loan-level identifier (LAN). Excluded from LLM payloads and exports by default.
+      - name: UCID
+        type: string
+        pii_tier: direct_pii
+        note: Customer-level identifier (UCIC). Masked at ingestion (deterministic hash).
+      - name: CUSTOMER_ID
+        type: string
+        pii_tier: direct_pii
+        note: Masked at ingestion (deterministic hash) for join stability.
+      - name: PRODUCT
+        type: string
+        pii_tier: none
+      - name: LOAN_STATUS
+        type: string
+        pii_tier: none
+
+  geography:
+    table: main
+    columns:
+      - name: BRANCH_NAME
+        type: string
+        pii_tier: none
+      - name: REGION
+        type: string
+        pii_tier: none
+      - name: STATE
+        type: string
+        pii_tier: none
+      - name: ZONE
+        type: string
+        pii_tier: none
+      - name: HUB_STATE
+        type: string
+        pii_tier: none
+      - name: FINAL_LOCATION
+        type: string
+        pii_tier: none
+
+  sanction_terms:
+    table: main
+    columns:
+      - name: SANCTION_AMOUNT
+        type: decimal
+        pii_tier: none
+      - name: LOAN_AMOUNT
+        type: decimal
+        pii_tier: none
+      - name: BOOKING_ROI
+        type: decimal
+        pii_tier: none
+        note: Booking-time rate of interest. Do not conflate with ROI (current).
+      - name: ROI
+        type: decimal
+        pii_tier: none
+        note: Current rate of interest. Do not conflate with BOOKING_ROI.
+      - name: TENURE
+        type: integer
+        pii_tier: none
+      - name: BALANCE_TENURE
+        type: integer
+        pii_tier: none
+
+  exposure:
+    table: main
+    columns:
+      - name: PRINCIPAL_OS
+        type: decimal
+        pii_tier: none
+        glossary_ref: POS
+      - name: TOTAL_POS
+        type: decimal
+        pii_tier: none
+        glossary_ref: POS
+      - name: INTEREST_OS
+        type: decimal
+        pii_tier: none
+      - name: POS_IN_CR
+        type: decimal
+        pii_tier: none
+        note: Unit-converted (Cr) duplicate of POS columns. Do not double count with raw POS.
+
+  delinquency:
+    table: main
+    columns:
+      - name: AUM_1PLUS_LAN
+        type: decimal
+        glossary_ref: AUM
+        ambiguity_dims: [level=LAN, share=gross]
+      - name: AUM_1PLUS_UCIC
+        type: decimal
+        glossary_ref: AUM
+        ambiguity_dims: [level=UCIC, share=gross]
+      - name: AUM_1PLUS_FINANCE
+        type: decimal
+        glossary_ref: AUM
+        ambiguity_dims: [level=Finance, share=gross]
+      - name: AUM_30PLUS_LAN
+        type: decimal
+        glossary_ref: AUM
+        ambiguity_dims: [level=LAN, share=gross]
+      - name: AUM_60PLUS_LAN
+        type: decimal
+        glossary_ref: AUM
+        ambiguity_dims: [level=LAN, share=gross]
+      - name: AUM_90PLUS_LAN
+        type: decimal
+        glossary_ref: AUM
+        ambiguity_dims: [level=LAN, share=gross]
+      - name: AUM_90PLUS_UCIC
+        type: decimal
+        glossary_ref: AUM
+        ambiguity_dims: [level=UCIC, share=gross]
+      - name: AUM_90PLUS_FINANCE_OWNSHARE
+        type: decimal
+        glossary_ref: AUM
+        ambiguity_dims: [level=Finance, share=own_share]
+      - name: AUF_1PLUS_LAN
+        type: decimal
+        glossary_ref: AUF
+        status: pending_sme_definition
+    note: >
+      Ambiguity: three level dimensions x two share bases. Any question
+      naming AUM/AUF/POS without both dimensions MUST trigger forced
+      disambiguation (doc §6.3) rather than a guessed column pick.
+
+  risk_classification:
+    table: irac_history
+    long_format: true
+    columns:
+      - name: loan_id
+        type: string
+      - name: level
+        type: string
+        allowed_values: [LAN, PRODUCT, UCIC, UCIC_FINANCE]
+      - name: month
+        type: date
+      - name: stage
+        type: string
+        note: Exact IRAC label set pending credit-team sign-off.
+        status: pending_sme_definition
+      - name: dpd
+        type: integer
+      - name: npa_reason
+        type: string
+      - name: npa_date
+        type: date
+
+  credit:
+    table: main
+    columns:
+      - name: CIBIL_SCORE
+        type: integer
+        glossary_ref: CIBIL
+      - name: CIBIL_BUCKET
+        type: string
+      - name: CMR_SCORE
+        type: integer
+        glossary_ref: CMR
+      - name: LAP_LTV
+        type: decimal
+        glossary_ref: LTV
+      - name: FOIR
+        type: decimal
+        glossary_ref: FOIR
+
+  lifecycle_events:
+    table: main
+    columns:
+      - name: RESTRUCTURING_DATE
+        type: date
+      - name: WRITE_OFF_DATE
+        type: date
+      - name: BOOK_SOLD_NAME
+        type: string
+      - name: BOOK_SOLD_DATE
+        type: date
+
+  sourcing:
+    table: main
+    access_restricted: true
+    allowed_roles: [credit_leadership, collections_leadership, admin]
+    columns:
+      - name: DSA
+        type: string
+        pii_tier: employee_vendor_attribution
+      - name: DME
+        type: string
+        pii_tier: employee_vendor_attribution
+      - name: CONNECTOR_NAME
+        type: string
+        pii_tier: employee_vendor_attribution
+      - name: CHANNEL
+        type: string
+        pii_tier: none
+      - name: DATA_SOURCE
+        type: string
+        pii_tier: none
+
+  co_lending:
+    table: main
+    columns:
+      - name: COLENDING_FLAG
+        type: boolean
+        glossary_ref: Co_lending
+      - name: INVESTOR_SHARING_RATIO
+        type: decimal
+      - name: OWN_SHARING_RATIO
+        type: decimal
+
+  bounce:
+    table: bounce_history
+    long_format: true
+    columns:
+      - name: loan_id
+        type: string
+      - name: month
+        type: date
+      - name: value
+        type: decimal
+      - name: bounce_reason
+        type: string
+      - name: bounce_grouping
+        type: string
+      - name: tech_non_tech
+        type: string
+
+# Columns pending SME sign-off are excluded from get_schema_card() output
+# by default. See app/tools/data.py:get_schema_card.
+pending_sme_definition_columns:
+  - AUF_1PLUS_LAN
+  - irac_history.stage
+  - Finance_level (glossary)

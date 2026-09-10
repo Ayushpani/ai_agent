@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+data/curated/
+data/audit_log.sqlite3
+*.egg-info/
+.pytest_cache/
+.chainlit/
+.files/
+chainlit.md

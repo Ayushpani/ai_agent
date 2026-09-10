@@ -1,0 +1,111 @@
+# Business glossary handed to the SQL Generator and Analyst models.
+# This file is the ONLY source of business-term meaning the LLM ever sees —
+# never let a model infer a definition from a column name alone.
+#
+# See architecture doc §13.1 for the authoritative prose version.
+
+AUM:
+  full_name: Assets Under Management
+  meaning: >
+    Outstanding loan exposure carried by the entity. Exists at three
+    distinct levels (LAN / UCIC / Finance) and two share bases
+    (gross / own-share) — see ambiguity_dimensions.py for the
+    forced-disambiguation rule (§6.3).
+  ambiguous: true
+
+AUF:
+  full_name: Assets Under Financing
+  meaning: >
+    A related exposure measure; exact definition per source system.
+    Treat as ambiguous until confirmed by the credit/risk data-dictionary
+    owner — do not assume equivalence with AUM.
+  ambiguous: true
+  status: pending_sme_definition
+
+POS:
+  full_name: Principal Outstanding
+  meaning: The unpaid principal balance on a loan as of the snapshot date.
+  ambiguous: false
+
+DPD:
+  full_name: Days Past Due
+  meaning: Days since the earliest unpaid installment.
+  ambiguous: false
+
+IRAC:
+  full_name: Income Recognition and Asset Classification
+  meaning: >
+    RBI-mandated categorization (Standard / SMA-0/1/2 / NPA sub-stages).
+    Exact label set to be confirmed with the credit team before the
+    schema card is signed off.
+  ambiguous: false
+  status: pending_sme_definition
+
+NPA:
+  full_name: Non-Performing Asset
+  meaning: Loan account past a regulatory threshold, generally 90+ DPD.
+  ambiguous: false
+
+LAN:
+  full_name: Loan Account Number
+  meaning: The loan-level identifier. One of the three exposure-level dimensions.
+  ambiguous: false
+
+UCIC:
+  full_name: Unique Customer Identification Code
+  meaning: >
+    The customer-level identifier; one UCIC may hold multiple LANs.
+    One of the three exposure-level dimensions.
+  ambiguous: false
+
+Finance_level:
+  full_name: Finance level
+  meaning: >
+    A third exposure aggregation, typically the entity's own
+    funded/accounting exposure. Confirm exact definition with the
+    credit team before relying on it in a client-facing answer.
+  ambiguous: false
+  status: pending_sme_definition
+
+LTV:
+  full_name: Loan-to-Value
+  meaning: Loan amount divided by collateral value.
+  ambiguous: false
+
+FOIR:
+  full_name: Fixed Obligation to Income Ratio
+  meaning: Borrower affordability metric.
+  ambiguous: false
+
+Co_lending:
+  full_name: Co-lending
+  meaning: >
+    Joint funding of a loan by two institutions per the RBI co-lending
+    framework; INVESTOR_SHARING_RATIO / OWN_SHARING_RATIO split the
+    exposure. Drives the gross-vs-own-share disambiguation dimension.
+  ambiguous: false
+
+CIBIL:
+  full_name: TransUnion CIBIL credit score
+  meaning: Third-party bureau credit score.
+  ambiguous: false
+
+CMR:
+  full_name: Company Management Risk rating
+  meaning: CIBIL commercial risk rating for business borrowers.
+  ambiguous: false
+
+MOB:
+  full_name: Months on Book
+  meaning: Months since disbursal.
+  ambiguous: false
+
+EMI:
+  full_name: Equated Monthly Installment
+  meaning: Fixed periodic loan repayment amount.
+  ambiguous: false
+
+Pre_EMI:
+  full_name: Pre-EMI
+  meaning: Interest-only period before EMI begins.
+  ambiguous: false

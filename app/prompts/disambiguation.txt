@@ -1,0 +1,10 @@
+Your question mentions {metric} without specifying which exposure
+level and share basis to use. This portfolio has three genuinely
+different levels and two share bases for the same underlying loans,
+so the "correct" number depends on which you mean:
+
+  Level:  LAN (loan-level)  |  UCIC (customer-level)  |  Finance (entity's own funded exposure)
+  Basis:  gross  |  own-share (relevant only for co-lent loans)
+
+Please tell me which level and basis you'd like, e.g. "Finance level,
+own-share."
