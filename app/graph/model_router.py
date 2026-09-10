@@ -5,8 +5,25 @@ unavailable, the next candidate is tried automatically, gated by the
 quota monitor so we pre-empt a call we already know will fail.
 
 Zero-cost constraint: every model_id below must resolve to a free-tier
-endpoint. Swap the model_id strings in STAGE_MODELS to change providers
-without touching any node code.
+endpoint.
+
+Free-tier catalogs (especially OpenRouter's ":free" models) rotate and
+deprecate on a timescale of weeks, not years — a slug hardcoded here
+will eventually 404 the way any specific "current best free model"
+claim would. Rather than re-editing this file every time that happens,
+every stage's model list is overridable from the environment:
+
+    ROUTER_MODELS=openrouter/some-provider/some-model:free,openrouter/fallback:free
+    SQL_GENERATOR_MODELS=...
+    ANALYST_MODELS=...
+    NARRATOR_MODELS=...
+
+(comma-separated, first entry = primary, rest = failover chain). To find
+a slug that is actually live right now: go to
+https://openrouter.ai/models, filter to Free, open a model, and copy
+the exact string LiteLLM's code sample shows after "openrouter/" — the
+human-readable name shown in the OpenRouter UI (e.g. "Google: Gemma 4
+31B (free)") is NOT the API slug and will not work here directly.
 """
 from __future__ import annotations
 
@@ -16,12 +33,13 @@ import litellm
 
 from app.observability.quota_monitor import quota_monitor
 
-# doc §6.2 model assignment. First entry per stage is primary; the rest
-# are the failover chain, tried in order.
-STAGE_MODELS: dict[str, list[str]] = {
+# Fallback defaults used only when the corresponding env var is unset.
+# Treat these as "known to have worked at some point" rather than a
+# live guarantee — see the module docstring for how to replace them.
+_DEFAULT_STAGE_MODELS: dict[str, list[str]] = {
     "router": [
-        "cloudflare/@cf/meta/llama-3.1-8b-instruct",
         "openrouter/meta-llama/llama-3.2-3b-instruct:free",
+        "cloudflare/@cf/meta/llama-3.1-8b-instruct",
     ],
     "sql_generator": [
         "openrouter/qwen/qwen-2.5-coder-32b-instruct:free",
@@ -37,6 +55,13 @@ STAGE_MODELS: dict[str, list[str]] = {
     ],
 }
 
+_ENV_VAR_FOR_STAGE: dict[str, str] = {
+    "router": "ROUTER_MODELS",
+    "sql_generator": "SQL_GENERATOR_MODELS",
+    "analyst": "ANALYST_MODELS",
+    "narrator": "NARRATOR_MODELS",
+}
+
 STAGE_PROVIDER_FOR_QUOTA: dict[str, str] = {
     "cloudflare": "cloudflare_workers_ai",
     "openrouter": "openrouter",
@@ -48,6 +73,14 @@ class AllProvidersExhaustedError(RuntimeError):
     quota-exhausted or fails the call. The system returns an honest
     'temporarily rate-limited' message rather than an error (doc §10.2).
     """
+
+
+def get_stage_models(stage: str) -> list[str]:
+    env_var = _ENV_VAR_FOR_STAGE.get(stage)
+    raw = os.environ.get(env_var) if env_var else None
+    if raw:
+        return [m.strip() for m in raw.split(",") if m.strip()]
+    return _DEFAULT_STAGE_MODELS.get(stage, [])
 
 
 def _provider_key(model_id: str) -> str:
@@ -66,16 +99,20 @@ def call_stage(
     provider is already at its rate/quota limit, and falling over to the
     next candidate on a hard failure.
     """
-    candidates = STAGE_MODELS.get(stage)
+    candidates = get_stage_models(stage)
     if not candidates:
-        raise ValueError(f"No models configured for stage '{stage}'")
+        raise ValueError(
+            f"No models configured for stage '{stage}'. Set "
+            f"{_ENV_VAR_FOR_STAGE.get(stage, stage.upper() + '_MODELS')} in .env."
+        )
 
-    last_error: Exception | None = None
+    errors: list[str] = []
 
     for model_id in candidates:
         provider = _provider_key(model_id)
 
         if not quota_monitor.can_call(provider):
+            errors.append(f"{model_id}: provider quota/rate limit reached locally")
             continue
 
         try:
@@ -91,13 +128,17 @@ def call_stage(
             )
             quota_monitor.record_call(provider)
             return response.choices[0].message.content
-        except Exception as e:  # rate limit, timeout, provider outage, etc.
-            last_error = e
+        except Exception as e:  # rate limit, timeout, provider outage, bad slug, etc.
+            errors.append(f"{model_id}: {e}")
             continue
 
+    env_var = _ENV_VAR_FOR_STAGE.get(stage, stage.upper() + "_MODELS")
     raise AllProvidersExhaustedError(
-        f"All candidates for stage '{stage}' exhausted or unavailable. "
-        f"Last error: {last_error}"
+        f"All candidates for stage '{stage}' failed:\n"
+        + "\n".join(f"  - {err}" for err in errors)
+        + f"\nIf these are 404/model-not-found errors, the slug(s) have "
+        f"rotated out of the provider's free catalog — set {env_var} in "
+        f".env to a currently-live slug (see this module's docstring)."
     )
 
 
