@@ -23,56 +23,80 @@ DEFAULT_ROW_CAP = 100_000
 DEFAULT_TIMEOUT_SECONDS = 30
 
 _FENCE_RE = re.compile(r"```(?:sql)?\s*(.*?)```", re.IGNORECASE | re.DOTALL)
-# A "tempered dot" — (?!\n\s*\n). — matches any character, including a
-# newline, as long as a blank line doesn't start at that position. This
-# keeps the match from jumping across a paragraph break to reach a LATER
-# unrelated SELECT's placeholder, which plain ".*?" with DOTALL would do.
-_SELECT_WITH_PLACEHOLDER_RE = re.compile(
-    r"(?is)select\b(?:(?!\n\s*\n).)*?" + re.escape(ACCESS_SCOPE_PLACEHOLDER)
-    + r"(?:(?!\n\s*\n).)*?(?=\n\s*\n|```|$)"
-)
+# Where a statement can begin. WITH matters as much as SELECT: a CTE's
+# real start is the WITH, and anchoring on SELECT alone lands inside the
+# CTE body and severs the "WITH x AS (" prefix, leaving a stray ")".
+_STATEMENT_START_RE = re.compile(r"(?i)\b(?:with|select)\b")
 
 
 def extract_sql_statement(raw: str) -> str | None:
-    """Best-effort extraction of the actual SQL statement out of a raw
-    LLM response that may not have followed the "output only SQL"
-    instruction — most notably, "reasoning" model variants that emit a
+    """Best-effort extraction of the actual SQL statement out of a raw LLM
+    response that may not have followed the "output only SQL" instruction
+    — most notably "reasoning" model variants, which emit a
     chain-of-thought preamble regardless of the system prompt. Returns
-    None if nothing plausible is found, so the caller can fail with a
-    clear error instead of feeding prose into the SQL parser.
+    None if nothing parseable is found, so the caller can fail with a
+    clear error rather than feeding prose to the query engine.
 
-    Preference order: a fenced ```sql ... ``` block that starts with
-    SELECT, then the last SELECT-containing-the-placeholder run in the
-    raw text (models that reason typically state their real answer last),
-    then the raw text itself if it already looks like clean SQL.
+    The parser is the oracle here, not a regex. An earlier version matched
+    "SELECT ... {ACCESS_SCOPE_FILTER} ..." textually and picked the last
+    hit, which quietly mangled every CTE a model wrote — it started at the
+    SELECT *inside* "WITH latest AS (...)" and dropped the prefix. Rather
+    than add more pattern special-cases, each plausible start/end slice is
+    now handed to sqlglot, and the first slice that parses as exactly one
+    read-only SELECT carrying the placeholder wins.
     """
     raw = raw.strip()
 
+    # A fenced block is the model answering deliberately, so prefer it —
+    # last one first, since a model that reasons states its answer last.
     for block in reversed(_FENCE_RE.findall(raw)):
-        block = block.strip()
-        if re.match(r"(?i)^select\b", block) and _looks_like_sql(block):
-            return block
+        found = _first_parseable_statement(block.strip())
+        if found:
+            return found
 
-    matches = list(_SELECT_WITH_PLACEHOLDER_RE.finditer(raw))
-    for match in reversed(matches):
-        candidate = match.group(0).strip()
-        if _looks_like_sql(candidate):
-            return candidate
+    return _first_parseable_statement(raw)
 
-    if re.match(r"(?i)^select\b", raw) and ACCESS_SCOPE_PLACEHOLDER in raw and _looks_like_sql(raw):
-        return raw
 
+def _first_parseable_statement(text: str) -> str | None:
+    if ACCESS_SCOPE_PLACEHOLDER not in text:
+        return None
+
+    # Earliest start first: for "WITH x AS (SELECT ...) SELECT ...", the
+    # WITH precedes its inner SELECT and is the correct anchor.
+    for match in _STATEMENT_START_RE.finditer(text):
+        tail = text[match.start():]
+        for end in _candidate_ends(tail):
+            candidate = tail[:end].strip().rstrip(";").strip()
+            if ACCESS_SCOPE_PLACEHOLDER not in candidate:
+                continue
+            if _parses_as_single_select(candidate):
+                return candidate
     return None
 
 
-def _looks_like_sql(candidate: str) -> bool:
-    """A real SELECT always has a FROM clause; a reasoning model's prose
-    ABOUT the instructions (e.g. 'Generate one SELECT statement, include
-    {ACCESS_SCOPE_FILTER} in WHERE...') matches the SELECT+placeholder
-    pattern but is not actually SQL — it has no FROM. This is the cheapest
-    reliable signal to tell the two apart without a full parse attempt.
-    """
-    return bool(re.search(r"(?i)\bfrom\b", candidate))
+def _candidate_ends(tail: str) -> list[int]:
+    """Longest first, then progressively trimmed back at the boundaries
+    trailing prose tends to sit behind — so a complete statement keeps its
+    GROUP BY/ORDER BY, while a statement followed by commentary still
+    parses once the commentary is cut."""
+    ends = {len(tail)}
+    for boundary in ("\n\n", "```", ";"):
+        index = tail.find(boundary)
+        while index != -1:
+            ends.add(index + (1 if boundary == ";" else 0))
+            index = tail.find(boundary, index + 1)
+    return sorted((e for e in ends if e > 0), reverse=True)
+
+
+def _parses_as_single_select(sql: str, dialect: str = "duckdb") -> bool:
+    try:
+        statements = sqlglot.parse(sql.replace(ACCESS_SCOPE_PLACEHOLDER, "1=1"), read=dialect)
+    except Exception:
+        return False
+    if len(statements) != 1:
+        return False
+    statement = statements[0]
+    return isinstance(statement, exp.Select) and statement.args.get("into") is None
 
 
 class SQLValidationError(ValueError):

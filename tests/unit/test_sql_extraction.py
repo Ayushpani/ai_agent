@@ -1,4 +1,54 @@
-from app.security.sql_validator import extract_sql_statement
+from app.security.sql_validator import extract_sql_statement, validate_and_prepare
+
+
+def test_cte_is_not_severed_at_its_inner_select():
+    """Regression: a model wrote "WITH latest AS (SELECT ...) SELECT ..."
+    and extraction anchored on the SELECT *inside* the CTE, dropping the
+    "WITH latest AS (" prefix and leaving a dangling ")". The query then
+    died with "Invalid expression / Unexpected token"."""
+    raw = (
+        "WITH latest AS (\n"
+        "  SELECT max(snapshot_month) AS max_snap FROM main\n"
+        ")\n"
+        "SELECT m.snapshot_month, SUM(m.AUM_90PLUS_FINANCE_OWNSHARE) AS aum\n"
+        "FROM main m\n"
+        "WHERE m.STATE = 'Maharashtra' AND {ACCESS_SCOPE_FILTER}\n"
+        "GROUP BY m.snapshot_month"
+    )
+    extracted = extract_sql_statement(raw)
+
+    assert extracted is not None
+    assert extracted.strip().upper().startswith("WITH")
+    # The whole thing must survive the real validator, not merely look right.
+    validate_and_prepare(extracted)
+
+
+def test_cte_survives_a_reasoning_preamble_and_trailing_prose():
+    raw = (
+        "Let me think about this. I need the latest month first.\n\n"
+        "WITH latest AS (SELECT max(snapshot_month) AS s FROM main)\n"
+        "SELECT snapshot_month, SUM(PRINCIPAL_OS) AS pos\n"
+        "FROM main WHERE {ACCESS_SCOPE_FILTER} GROUP BY snapshot_month\n\n"
+        "That should give the trend."
+    )
+    extracted = extract_sql_statement(raw)
+
+    assert extracted is not None
+    assert extracted.strip().upper().startswith("WITH")
+    assert "That should give the trend" not in extracted
+    validate_and_prepare(extracted)
+
+
+def test_group_by_and_order_by_are_not_truncated():
+    """The extractor tries the longest slice first, so trailing clauses
+    stay attached rather than being cut at the first boundary."""
+    raw = (
+        "SELECT snapshot_month, SUM(PRINCIPAL_OS) AS pos FROM main "
+        "WHERE {ACCESS_SCOPE_FILTER} GROUP BY snapshot_month ORDER BY snapshot_month"
+    )
+    extracted = extract_sql_statement(raw)
+    assert extracted is not None
+    assert "ORDER BY" in extracted.upper()
 
 
 def test_clean_sql_response_extracted_as_is():
