@@ -29,7 +29,7 @@ provider would reject anyway.
 
 ```
 app/
-├── api/            FastAPI routes (the request boundary)
+├── api/            FastAPI routes (the request boundary; /ask, /ask/stream, /download)
 ├── ui/             Chainlit chat app
 ├── graph/          LangGraph state machine (nodes, edges, model router)
 ├── prompts/        Router, SQL, Analyst, Narrator — versioned text files
@@ -40,6 +40,7 @@ app/
 └── observability/  Structured logging, quota monitor, audit log
 ingestion/          Excel -> mask -> melt -> Parquet snapshot pipeline
 config/             schema_card.yaml, glossary.yaml, access_policies.yaml
+web/                Next.js chat UI (alternative to Chainlit) — see web/README.md
 tests/
 ├── unit/           Tool-level tests, no LLM or network dependency
 ├── integration/    Golden-question suite against the graph (LLM mocked)
@@ -80,15 +81,24 @@ pytest tests/ -q
 ```bash
 # API
 uvicorn app.api.main:app --reload
+```
 
-# Chat UI
-chainlit run app/ui/chainlit_app.py
+Two interface options, both driven by the same API and the same graph:
+
+```bash
+# Option A: Chainlit chat UI
+chainlit run app/ui/chainlit_app.py -w
+
+# Option B: Next.js chat UI (custom animated interface, see web/README.md)
+cd web && npm install && npm run dev
 ```
 
 `POST /ask` with `{"session_id", "question", "identity": {"employee_id", "role"}}`
-returns the narrated answer, chart spec, and signals JSON; `GET
-/download/{session_id}` returns the Excel workbook for the last chartable
-result in that session.
+returns the narrated answer, chart spec, and signals JSON in one response.
+`POST /ask/stream` returns the same information as Server-Sent Events, one
+event per pipeline stage as it actually starts/finishes — what the Next.js
+UI's live step timeline is built on. `GET /download/{session_id}` returns
+the Excel workbook for the last chartable result in that session.
 
 ## The forced-disambiguation rule
 
