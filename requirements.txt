@@ -30,7 +30,7 @@ plotly==7.0.0
 XlsxWriter==3.2.9
 
 # Interface
-chainlit==2.12.0
+chainlit==2.11.0
 
 # Observability
 structlog==26.1.0
