@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import time
 
-from app.graph.llm_output import extract_json_object
+from app.graph.llm_output import extract_json_object, strip_scaffolding
 from app.graph.model_router import call_stage
 from app.graph.state import GraphState
 from app.models.schemas import (
@@ -243,10 +243,10 @@ def analyst_node(state: GraphState) -> dict:
 def narrator_node(state: GraphState) -> dict:
     findings_text = "\n".join(f"- {f.text}" for f in state["analyst_output"].findings)
     context = f"Question: {state['question']}\nFindings:\n{findings_text}"
-    prose = call_stage("narrator", load_prompt("narrator"), context, max_tokens=512)
+    prose = call_stage("narrator", load_prompt("narrator"), context, max_tokens=700)
 
     return {
-        "narration": prose,
+        "narration": strip_scaffolding(prose),
         **_with_model_id(state, "narrator", "stage:narrator"),
     }
 

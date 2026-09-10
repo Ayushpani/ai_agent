@@ -18,9 +18,13 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // The document itself scrolls — no h-full lock, no inner scroll
+  // container. A nested scroller only responds to the wheel while the
+  // cursor is inside it, which is exactly the behaviour every real chat
+  // app avoids.
   return (
-    <html lang="en" className={`${inter.variable} ${mono.variable} h-full`}>
-      <body className="min-h-full flex flex-col font-sans antialiased">{children}</body>
+    <html lang="en" className={`${inter.variable} ${mono.variable} scroll-smooth`}>
+      <body className="min-h-dvh font-sans antialiased">{children}</body>
     </html>
   );
 }

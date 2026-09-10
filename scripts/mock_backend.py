@@ -3,14 +3,23 @@
 Lets you exercise the full UI — including deep research — without API
 keys or free-tier quota. Every non-LLM layer (SQL validation, access
 scoping, DuckDB execution, the statistical tools, workbook build) runs
-for real; only the four model calls are replaced with canned responses.
+for real; only the model calls are replaced with canned responses.
 
     python scripts/mock_backend.py            # then open the web UI
+    python scripts/mock_backend.py --slow     # simulate model latency
+
+Mocked calls return instantly, which makes the whole pipeline finish in
+about 0.2s — too fast to see, let alone develop against, any of the
+streaming UI states. --slow adds a per-stage delay in the same ballpark
+as a real free-tier call so the live step timeline behaves as it will in
+production.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -76,13 +85,37 @@ RESPONSES = {
 }
 
 
-def fake_call_stage(stage, system_prompt, user_content, temperature=0.0, max_tokens=1024):
-    return RESPONSES[stage]
+# Roughly what each stage costs against a free-tier endpoint, so the
+# streaming UI is exercised under realistic timing rather than instantly.
+SLOW_STAGE_SECONDS = {
+    "router": 0.9,
+    "sql_generator": 2.4,
+    "research_planner": 2.0,
+    "analyst": 1.8,
+    "synthesis": 2.6,
+    "narrator": 1.6,
+}
+
+
+def build_fake_call_stage(slow: bool):
+    def fake_call_stage(stage, system_prompt, user_content, temperature=0.0, max_tokens=1024):
+        if slow:
+            time.sleep(SLOW_STAGE_SECONDS.get(stage, 1.0))
+        return RESPONSES[stage]
+
+    return fake_call_stage
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--slow", action="store_true", help="Simulate free-tier model latency.")
+    parser.add_argument("--port", type=int, default=8000)
+    args = parser.parse_args()
+
+    fake_call_stage = build_fake_call_stage(args.slow)
+
     with (
         patch("app.graph.nodes.call_stage", side_effect=fake_call_stage),
         patch("app.graph.research_nodes.call_stage", side_effect=fake_call_stage),
     ):
-        uvicorn.run("app.api.main:app", host="0.0.0.0", port=8000, log_level="warning")
+        uvicorn.run("app.api.main:app", host="0.0.0.0", port=args.port, log_level="warning")

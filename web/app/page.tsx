@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { ChatInput } from "@/components/ChatInput";
 import { UserTurn } from "@/components/UserTurn";
@@ -30,11 +30,25 @@ export default function Home() {
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [depth, setDepth] = useState<ResearchDepth>("standard");
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const pinnedToBottom = useRef(true);
 
-  const scrollToBottom = useCallback(() => {
+  // Follow the stream only while the reader is already at the bottom.
+  // Yanking someone back down while they are reading an earlier panel is
+  // the other half of what makes chat scrolling feel broken.
+  useEffect(() => {
+    const onScroll = () => {
+      const distanceFromBottom =
+        document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+      pinnedToBottom.current = distanceFromBottom < 160;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const scrollToBottom = useCallback((force = false) => {
+    if (!force && !pinnedToBottom.current) return;
     requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
     });
   }, []);
 
@@ -48,11 +62,22 @@ export default function Home() {
         {
           id: turnId,
           question,
-          assistant: { id: turnId, sessionId, steps: [], final: null, streaming: true },
+          assistant: {
+            id: turnId,
+            sessionId,
+            steps: [],
+            final: null,
+            streaming: true,
+            startedAt: Date.now(),
+            durationMs: null,
+          },
         },
       ]);
       setIsStreaming(true);
-      scrollToBottom();
+      // Always jump to a question the user just asked, even if they had
+      // scrolled up to read something earlier.
+      pinnedToBottom.current = true;
+      scrollToBottom(true);
 
       const updateAssistant = (mutate: (prev: AssistantTurnData) => AssistantTurnData) => {
         setTurns((prev) =>
@@ -76,7 +101,12 @@ export default function Home() {
             }));
             scrollToBottom();
           } else if (event.kind === "final") {
-            updateAssistant((prev) => ({ ...prev, final: event.result, streaming: false }));
+            updateAssistant((prev) => ({
+              ...prev,
+              final: event.result,
+              streaming: false,
+              durationMs: Date.now() - prev.startedAt,
+            }));
             scrollToBottom();
           }
         }
@@ -84,6 +114,7 @@ export default function Home() {
         updateAssistant((prev) => ({
           ...prev,
           streaming: false,
+          durationMs: Date.now() - prev.startedAt,
           final: {
             narration: null,
             chart_spec: null,
@@ -107,18 +138,20 @@ export default function Home() {
   );
 
   return (
-    <div className="mx-auto flex h-dvh w-full max-w-5xl flex-col px-4">
-      <header className="flex flex-col gap-1 py-6">
-        <h1 className="text-[22px] font-semibold tracking-tight text-foreground">
-          Portfolio Intelligence Agent
-        </h1>
-        <p className="text-[14px] text-muted">
-          Natural-language analytics over the loan-portfolio MIS. Every figure traces to a SQL
-          execution or a deterministic calculation — never a language-model token.
-        </p>
+    <div className="min-h-dvh">
+      <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur">
+        <div className="mx-auto w-full max-w-5xl px-4 py-3">
+          <h1 className="text-[16px] font-semibold tracking-tight text-foreground">
+            Portfolio Intelligence Agent
+          </h1>
+          <p className="text-[12.5px] text-muted">
+            Every figure traces to a SQL execution or a deterministic calculation — never a
+            language-model token.
+          </p>
+        </div>
       </header>
 
-      <div ref={scrollRef} className="flex-1 space-y-6 overflow-y-auto pb-4">
+      <main className="mx-auto w-full max-w-5xl space-y-6 px-4 pb-40 pt-6">
         {turns.length === 0 && <EmptyState onPick={ask} />}
 
         <AnimatePresence initial={false}>
@@ -129,10 +162,12 @@ export default function Home() {
             </div>
           ))}
         </AnimatePresence>
-      </div>
+      </main>
 
-      <div className="sticky bottom-0 bg-background pb-6 pt-2">
-        <ChatInput onSubmit={ask} disabled={isStreaming} depth={depth} onDepthChange={setDepth} />
+      <div className="fixed inset-x-0 bottom-0 z-20 bg-gradient-to-t from-background via-background to-transparent pb-5 pt-8">
+        <div className="mx-auto w-full max-w-5xl px-4">
+          <ChatInput onSubmit={ask} disabled={isStreaming} depth={depth} onDepthChange={setDepth} />
+        </div>
       </div>
     </div>
   );

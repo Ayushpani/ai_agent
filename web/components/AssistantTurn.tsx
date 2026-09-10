@@ -2,7 +2,8 @@
 
 import { motion } from "framer-motion";
 import { Download } from "lucide-react";
-import { StepTimeline, type StepState } from "./StepTimeline";
+import { type StepState } from "./StepTimeline";
+import { ReasoningPanel } from "./ReasoningPanel";
 import { StreamingText } from "./StreamingText";
 import { ChartRenderer } from "./ChartRenderer";
 import { SignalStrip } from "./SignalStrip";
@@ -17,6 +18,8 @@ export interface AssistantTurnData {
   steps: StepState[];
   final: FinalResult | null;
   streaming: boolean;
+  startedAt: number;
+  durationMs: number | null;
 }
 
 export function AssistantTurn({ turn }: { turn: AssistantTurnData }) {
@@ -33,7 +36,11 @@ export function AssistantTurn({ turn }: { turn: AssistantTurnData }) {
       transition={{ duration: 0.3 }}
       className="flex flex-col gap-3"
     >
-      <StepTimeline steps={turn.steps} />
+      <ReasoningPanel
+        steps={turn.steps}
+        streaming={turn.streaming}
+        durationMs={turn.durationMs}
+      />
 
       {final?.narration && (
         <div className="rounded-xl border border-border bg-surface px-5 py-4">

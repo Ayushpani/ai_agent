@@ -11,19 +11,19 @@ export interface StepState {
   detail: { kind: "text" | "sql"; content: string } | null;
 }
 
+/** The step list itself. It carries no border or background of its own —
+ * ReasoningPanel owns the container it sits inside. */
 export function StepTimeline({ steps }: { steps: StepState[] }) {
   if (steps.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-border bg-surface">
-      <ol className="divide-y divide-border">
-        <AnimatePresence initial={false}>
-          {steps.map((step) => (
-            <StepRow key={step.stage} step={step} />
-          ))}
-        </AnimatePresence>
-      </ol>
-    </div>
+    <ol className="divide-y divide-border">
+      <AnimatePresence initial={false}>
+        {steps.map((step) => (
+          <StepRow key={step.stage} step={step} />
+        ))}
+      </AnimatePresence>
+    </ol>
   );
 }
 
