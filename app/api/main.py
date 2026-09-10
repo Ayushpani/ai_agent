@@ -17,7 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.graph.run_request import handle_question, stream_question
-from app.models.schemas import ChartType
+from app.models.schemas import ChartType, ResearchDepth
 from app.observability.logging_setup import configure_logging
 from app.tools.workbook import build_excel_workbook
 
@@ -51,6 +51,10 @@ class AskRequest(BaseModel):
     session_id: str
     question: str
     identity: EmployeeIdentity
+    # Deep research costs two extra free-tier LLM calls plus a handful of
+    # SQL probes, so it is opt-in per request rather than always-on
+    # (doc §10.2 quota discipline).
+    research_depth: ResearchDepth = ResearchDepth.standard
 
 
 def get_current_employee(identity: EmployeeIdentity) -> EmployeeIdentity:
@@ -77,6 +81,7 @@ def ask(request: AskRequest) -> dict:
         role=identity.role,
         employee_region=identity.employee_region,
         employee_branch=identity.employee_branch,
+        research_depth=request.research_depth,
     )
 
     _LAST_RESULT_BY_SESSION[request.session_id] = {**result, "question": request.question}
@@ -109,6 +114,7 @@ async def ask_stream(request: AskRequest) -> StreamingResponse:
             role=identity.role,
             employee_region=identity.employee_region,
             employee_branch=identity.employee_branch,
+            research_depth=request.research_depth,
         ):
             if event["kind"] == "final":
                 final_result = event["result"]
@@ -141,6 +147,8 @@ def download_workbook(session_id: str):
         employee_id="unknown",
         snapshot_months=[],
         signals=result.get("signals"),
+        panels=result.get("panels") or [],
+        narration=result.get("narration"),
     )
 
     return StreamingResponse(

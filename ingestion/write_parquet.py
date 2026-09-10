@@ -9,15 +9,28 @@ caller to pass overwrite=True.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pandas as pd
 
-DEFAULT_CURATED_ROOT = Path(__file__).resolve().parent.parent / "data" / "curated"
+_REPO_CURATED_ROOT = Path(__file__).resolve().parent.parent / "data" / "curated"
 
 
-def partition_dir(snapshot_month: str, root: Path = DEFAULT_CURATED_ROOT) -> Path:
+def curated_root() -> Path:
+    """Honours the same PORTFOLIO_CURATED_ROOT override the query layer
+    uses, so tests can ingest into a temp directory instead of clobbering
+    a developer's seeded dataset. Resolved per call, never bound as a
+    default argument — a default is evaluated once at import and would
+    ignore any later redirection.
+    """
+    override = os.environ.get("PORTFOLIO_CURATED_ROOT")
+    return Path(override) if override else _REPO_CURATED_ROOT
+
+
+def partition_dir(snapshot_month: str, root: Path | None = None) -> Path:
     """snapshot_month like '2026-08'."""
+    root = root or curated_root()
     return root / f"snapshot_month={snapshot_month}"
 
 
@@ -25,9 +38,10 @@ def write_snapshot(
     main_df: pd.DataFrame,
     long_tables: dict[str, pd.DataFrame],
     snapshot_month: str,
-    root: Path = DEFAULT_CURATED_ROOT,
+    root: Path | None = None,
     overwrite: bool = False,
 ) -> Path:
+    root = root or curated_root()
     out_dir = partition_dir(snapshot_month, root)
 
     if out_dir.exists() and not overwrite:

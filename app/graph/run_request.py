@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator
 
 from app.graph.build import get_graph
-from app.models.schemas import AccessScope, AuditLogRecord
+from app.models.schemas import AccessScope, AuditLogRecord, ResearchDepth
 from app.observability.audit_log import write_audit_record
 from app.observability.logging_setup import get_logger
 
@@ -24,7 +24,8 @@ logger = get_logger()
 # the employee — internal LangGraph routing/wrapper nodes are filtered out.
 GRAPH_NODE_NAMES = {
     "route", "disambiguate", "generate_sql", "execute",
-    "handled_error", "run_tools", "analyze", "narrate", "chart",
+    "handled_error", "run_tools", "plan_research", "run_probes",
+    "synthesize", "analyze", "narrate", "chart",
 }
 
 
@@ -34,6 +35,8 @@ def _build_result(result: dict) -> dict[str, Any]:
         "chart_spec": result.get("chart_spec"),
         "query_result": result.get("query_result"),
         "signals": result.get("signals"),
+        "panels": result.get("panels") or [],
+        "research_plan": result.get("research_plan"),
         "error": result.get("error"),
         "final_sql": result.get("final_sql"),
     }
@@ -41,7 +44,9 @@ def _build_result(result: dict) -> dict[str, Any]:
 
 def _write_audit(
     result: dict, question: str, session_id: str, employee_id: str, error: str | None = None,
+    depth: ResearchDepth = ResearchDepth.standard,
 ) -> None:
+    panels = result.get("panels") or []
     write_audit_record(AuditLogRecord(
         timestamp=datetime.now(timezone.utc),
         employee_id=employee_id, session_id=session_id, question=question,
@@ -52,6 +57,11 @@ def _write_audit(
         model_ids_used=result.get("model_ids_used", {}),
         latency_ms_per_stage=result.get("latency_ms_per_stage", {}),
         narration_output=result.get("narration"),
+        research_depth=depth,
+        # Every probe query is audited alongside the primary SQL — a
+        # deep run executed more statements against the book, and the
+        # compliance trail has to show all of them (doc §9.4).
+        probe_sql=[p.sql for p in panels if getattr(p, "sql", None)],
         error=error or result.get("error"),
     ))
 
@@ -63,25 +73,29 @@ def handle_question(
     role: str,
     employee_region: str | None = None,
     employee_branch: str | None = None,
+    research_depth: ResearchDepth = ResearchDepth.standard,
 ) -> dict[str, Any]:
     scope = AccessScope(
         employee_id=employee_id, role=role,
         employee_region=employee_region, employee_branch=employee_branch,
     )
     graph = get_graph()
-    initial_state = {"question": question, "session_id": session_id, "access_scope": scope}
+    initial_state = {
+        "question": question, "session_id": session_id,
+        "access_scope": scope, "research_depth": research_depth,
+    }
 
     try:
         result = graph.invoke(initial_state)
     except Exception as e:
         logger.error("graph_invocation_failed", error=str(e), session_id=session_id)
-        _write_audit({}, question, session_id, employee_id, error=str(e))
+        _write_audit({}, question, session_id, employee_id, error=str(e), depth=research_depth)
         return {
             "narration": "Something went wrong answering that question. The team has been notified.",
             "error": str(e),
         }
 
-    _write_audit(result, question, session_id, employee_id)
+    _write_audit(result, question, session_id, employee_id, depth=research_depth)
     return _build_result(result)
 
 
@@ -92,6 +106,7 @@ async def stream_question(
     role: str,
     employee_region: str | None = None,
     employee_branch: str | None = None,
+    research_depth: ResearchDepth = ResearchDepth.standard,
 ) -> AsyncIterator[dict[str, Any]]:
     """Yields one event per pipeline stage in real time:
 
@@ -108,7 +123,10 @@ async def stream_question(
         employee_region=employee_region, employee_branch=employee_branch,
     )
     graph = get_graph()
-    initial_state = {"question": question, "session_id": session_id, "access_scope": scope}
+    initial_state = {
+        "question": question, "session_id": session_id,
+        "access_scope": scope, "research_depth": research_depth,
+    }
 
     final_state: dict = {}
 
@@ -126,7 +144,7 @@ async def stream_question(
                 yield {"kind": "stage_end", "stage": name, "update": update}
     except Exception as e:
         logger.error("graph_stream_failed", error=str(e), session_id=session_id)
-        _write_audit(final_state, question, session_id, employee_id, error=str(e))
+        _write_audit(final_state, question, session_id, employee_id, error=str(e), depth=research_depth)
         yield {
             "kind": "final",
             "result": {
@@ -136,5 +154,5 @@ async def stream_question(
         }
         return
 
-    _write_audit(final_state, question, session_id, employee_id)
+    _write_audit(final_state, question, session_id, employee_id, depth=research_depth)
     yield {"kind": "final", "result": _build_result(final_state)}

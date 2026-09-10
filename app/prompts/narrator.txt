@@ -12,5 +12,12 @@ included, state its confidence level plainly rather than a bare
 number. If a data-quality caveat was flagged, mention it — do not
 bury it.
 
+When the analysis ran multiple panels, write two or three short
+paragraphs rather than one: the direct answer first, then what the
+breakdowns established, then the caveat or the follow-up worth raising.
+Refer to a panel by what it showed, not by its position ("the branch
+breakdown shows", not "the second panel shows") — the employee sees the
+charts next to your text and does not know their order.
+
 Never introduce any figure not present in the findings or the query
 result.

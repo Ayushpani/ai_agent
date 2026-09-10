@@ -1,7 +1,17 @@
-"""LangGraph state machine wiring (doc §3.1, §3.2): Router -> SQL
-Generator -> Validate/Execute -> Tools -> Analyst -> Narrator -> Chart.
-Explicit graph of nodes/edges — auditable, testable, no free-form
-autonomy: the LLM never decides what happens next, the graph does.
+"""LangGraph state machine wiring (doc §3.1, §3.2), extended with the
+deep-research branch.
+
+Standard depth:
+    Router -> SQL Generator -> Execute -> Tools -> Analyst -> Narrator -> Chart
+
+Deep depth adds a planned investigation round between the tools and the
+write-up:
+    ... -> Tools -> Plan research -> Run probes -> Synthesise -> Narrator -> Chart
+
+Explicit graph of nodes/edges either way — auditable, testable, no
+free-form autonomy. The LLM proposes which probes are worth running; it
+never decides what happens next, the graph does, and it never writes the
+probe SQL (see app/tools/probes.py for why).
 """
 from __future__ import annotations
 
@@ -16,6 +26,12 @@ from app.graph.nodes import (
     sql_generator_node,
     tools_node,
 )
+from app.graph.research_nodes import (
+    plan_research_node,
+    run_probes_node,
+    should_go_deep,
+    synthesis_node,
+)
 from app.graph.state import GraphState
 
 
@@ -29,6 +45,19 @@ def _after_execute(state: GraphState) -> str:
     if state.get("error"):
         return "handled_error"
     return "run_tools"
+
+
+def _after_tools(state: GraphState) -> str:
+    return "plan_research" if should_go_deep(state) else "analyze"
+
+
+def _after_plan(state: GraphState) -> str:
+    plan = state.get("research_plan")
+    if plan is not None and plan.should_go_deeper and plan.probes:
+        return "run_probes"
+    # The planner declined to deepen — fall back to the single-result
+    # analyst rather than synthesising over an empty panel set.
+    return "analyze"
 
 
 def _disambiguate_node(state: GraphState) -> dict:
@@ -48,6 +77,9 @@ def build_graph():
     graph.add_node("execute", execute_query_node)
     graph.add_node("handled_error", _error_node)
     graph.add_node("run_tools", tools_node)
+    graph.add_node("plan_research", plan_research_node)
+    graph.add_node("run_probes", run_probes_node)
+    graph.add_node("synthesize", synthesis_node)
     graph.add_node("analyze", analyst_node)
     graph.add_node("narrate", narrator_node)
     graph.add_node("chart", chart_node)
@@ -64,7 +96,17 @@ def build_graph():
         "run_tools": "run_tools",
     })
     graph.add_edge("handled_error", END)
-    graph.add_edge("run_tools", "analyze")
+
+    graph.add_conditional_edges("run_tools", _after_tools, {
+        "plan_research": "plan_research",
+        "analyze": "analyze",
+    })
+    graph.add_conditional_edges("plan_research", _after_plan, {
+        "run_probes": "run_probes",
+        "analyze": "analyze",
+    })
+    graph.add_edge("run_probes", "synthesize")
+    graph.add_edge("synthesize", "narrate")
     graph.add_edge("analyze", "narrate")
     graph.add_edge("narrate", "chart")
     graph.add_edge("chart", END)

@@ -10,13 +10,13 @@ is the SQL Generator's only view into what's queryable (doc §7.1).
 import duckdb
 import pytest
 
-from app.tools.data import _register_snapshots, get_schema_card, CURATED_ROOT
+from app.tools.data import _register_snapshots, curated_root, get_schema_card
 
 
 @pytest.fixture(scope="module")
 def physical_columns():
     con = duckdb.connect(":memory:")
-    _register_snapshots(con, CURATED_ROOT)
+    _register_snapshots(con, curated_root())
     tables = [row[0] for row in con.execute("SHOW TABLES").fetchall()]
     columns = {
         table: {row[1] for row in con.execute(f"PRAGMA table_info('{table}')").fetchall()}

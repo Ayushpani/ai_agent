@@ -137,6 +137,9 @@ class NarratorOutput(BaseModel):
 class ChartType(str, Enum):
     line = "line"
     bar = "bar"
+    grouped_bar = "grouped_bar"
+    multi_line = "multi_line"
+    area = "area"
     pie = "pie"
     scatter = "scatter"
     kpi_callout = "kpi_callout"
@@ -147,6 +150,9 @@ class ChartSpec(BaseModel):
     x_field: str | None = None
     y_field: str | None = None
     series_field: str | None = None
+    # For grouped_bar / multi_line, the several value columns (or the
+    # distinct series values) that share one axis.
+    value_fields: list[str] = Field(default_factory=list)
     forecast_forced: bool = False
 
 
@@ -155,6 +161,67 @@ class AccessScope(BaseModel):
     role: str
     employee_region: str | None = None
     employee_branch: str | None = None
+
+
+class ResearchDepth(str, Enum):
+    """How hard the agent works a question. `standard` is the original
+    single-query pipeline; `deep` adds a planned set of follow-up probes
+    (doc §7.6's fixed pipeline, extended one level).
+    """
+
+    standard = "standard"
+    deep = "deep"
+
+
+class ProbeType(str, Enum):
+    """The fixed catalog of follow-up investigations the research planner
+    may choose from. Deliberately closed: the planner picks WHAT to
+    investigate, and app/tools/probes.py deterministically builds HOW to
+    query it. Letting a weak free-tier model write four more free-form
+    SQL statements would multiply the failure mode that already makes
+    single-query generation unreliable.
+    """
+
+    decompose_by = "decompose_by"
+    trend_by_segment = "trend_by_segment"
+    period_comparison = "period_comparison"
+    concentration = "concentration"
+    distribution = "distribution"
+    related_metric = "related_metric"
+
+
+class ProbeSpec(BaseModel):
+    probe_type: ProbeType
+    title: str
+    rationale: str
+    metric: str
+    dimension: str | None = None
+    top_n: int = Field(default=6, ge=2, le=15)
+
+
+class ResearchPlan(BaseModel):
+    """Structured output of the research planner (app/prompts/research_planner.txt)."""
+
+    should_go_deeper: bool
+    reasoning: str
+    probes: list[ProbeSpec] = Field(default_factory=list)
+
+
+class AnalysisPanel(BaseModel):
+    """One completed probe, ready to render as a dashboard panel in the
+    chat UI and as its own sheet in the Excel workbook.
+    """
+
+    panel_id: str
+    title: str
+    rationale: str
+    probe_type: ProbeType | None = None
+    chart_spec: ChartSpec
+    records: list[dict[str, Any]] = Field(default_factory=list)
+    signals: SignalsPackage | None = None
+    sql: str = ""
+    headline: str | None = None
+    error: str | None = None
 
 
 class AuditLogRecord(BaseModel):
@@ -169,6 +236,8 @@ class AuditLogRecord(BaseModel):
     model_ids_used: dict[str, str] = Field(default_factory=dict)
     latency_ms_per_stage: dict[str, float] = Field(default_factory=dict)
     narration_output: str | None = None
+    research_depth: ResearchDepth = ResearchDepth.standard
+    probe_sql: list[str] = Field(default_factory=list)
     error: str | None = None
 
 

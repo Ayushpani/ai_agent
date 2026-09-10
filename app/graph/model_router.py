@@ -57,6 +57,17 @@ _DEFAULT_STAGE_MODELS: dict[str, list[str]] = {
         "openrouter/mistralai/mistral-7b-instruct:free",
         "openrouter/meta-llama/llama-3.2-3b-instruct:free",
     ],
+    # Deep-research stages. The planner emits a small structured JSON, so
+    # it runs on the same class of model as the router; synthesis is the
+    # hardest cognitive step in the system and gets the strongest model.
+    "research_planner": [
+        "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+        "openrouter/openai/gpt-oss-120b:free",
+    ],
+    "synthesis": [
+        "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+        "openrouter/openai/gpt-oss-120b:free",
+    ],
 }
 
 _ENV_VAR_FOR_STAGE: dict[str, str] = {
@@ -64,6 +75,8 @@ _ENV_VAR_FOR_STAGE: dict[str, str] = {
     "sql_generator": "SQL_GENERATOR_MODELS",
     "analyst": "ANALYST_MODELS",
     "narrator": "NARRATOR_MODELS",
+    "research_planner": "RESEARCH_PLANNER_MODELS",
+    "synthesis": "SYNTHESIS_MODELS",
 }
 
 STAGE_PROVIDER_FOR_QUOTA: dict[str, str] = {

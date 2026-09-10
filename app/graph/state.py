@@ -11,8 +11,11 @@ import pandas as pd
 
 from app.models.schemas import (
     AccessScope,
+    AnalysisPanel,
     AnalystOutput,
     ChartSpec,
+    ResearchDepth,
+    ResearchPlan,
     RouterOutput,
     SignalsPackage,
     SQLGeneratorOutput,
@@ -24,6 +27,7 @@ class GraphState(TypedDict, total=False):
     question: str
     session_id: str
     access_scope: AccessScope
+    research_depth: ResearchDepth
 
     # Reasoning layer outputs
     router_output: RouterOutput
@@ -40,6 +44,10 @@ class GraphState(TypedDict, total=False):
     analyst_output: AnalystOutput
     narration: str
     chart_spec: ChartSpec
+
+    # Deep-research layer
+    research_plan: ResearchPlan
+    panels: list[AnalysisPanel]
 
     # Audit
     tool_sequence: list[str]

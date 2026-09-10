@@ -3,6 +3,7 @@ to actual rows. All deterministic Python; never an LLM call.
 """
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -14,14 +15,26 @@ from app.models.schemas import AccessScope, SnapshotInfo
 from app.security.access_scope import resolve_denied_columns, substitute_access_scope
 from app.security.sql_validator import validate_and_prepare
 
-CURATED_ROOT = Path(__file__).resolve().parent.parent.parent / "data" / "curated"
+DEFAULT_CURATED_ROOT = Path(__file__).resolve().parent.parent.parent / "data" / "curated"
 SCHEMA_CARD_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "schema_card.yaml"
 
+# Env-var indirection so the test suite can point at a temp directory
+# instead of the developer's seeded dataset. Resolved per call, not
+# bound as a default argument — a default is evaluated once at import
+# and would ignore any later redirection.
+CURATED_ROOT_ENV_VAR = "PORTFOLIO_CURATED_ROOT"
 
-def get_snapshot_inventory(root: Path = CURATED_ROOT) -> list[SnapshotInfo]:
+
+def curated_root() -> Path:
+    override = os.environ.get(CURATED_ROOT_ENV_VAR)
+    return Path(override) if override else DEFAULT_CURATED_ROOT
+
+
+def get_snapshot_inventory(root: Path | None = None) -> list[SnapshotInfo]:
     """Which snapshots exist, row counts, date ranges. Feeds the
     forecast-feasibility gate (a forecast needs enough historical points).
     """
+    root = root or curated_root()
     if not root.exists():
         return []
 
@@ -67,11 +80,12 @@ def get_schema_card(role: str | None = None) -> dict:
     return {"domains": filtered_domains}
 
 
-def _register_snapshots(con: duckdb.DuckDBPyConnection, root: Path = CURATED_ROOT) -> None:
+def _register_snapshots(con: duckdb.DuckDBPyConnection, root: Path | None = None) -> None:
     """Registers a UNION-ALL view named `main` across every snapshot_month
     partition's main.parquet, with snapshot_month exposed as a column
     (doc §5.2: trend queries glob across partitions with one SQL statement).
     """
+    root = root or curated_root()
     pattern = str(root / "snapshot_month=*" / "main.parquet")
     con.execute(f"""
         CREATE OR REPLACE VIEW main AS
@@ -95,7 +109,7 @@ def _register_snapshots(con: duckdb.DuckDBPyConnection, root: Path = CURATED_ROO
 def run_sql(
     query: str,
     access_scope: AccessScope,
-    root: Path = CURATED_ROOT,
+    root: Path | None = None,
 ) -> pd.DataFrame:
     """Executes validated SELECT via DuckDB. Injects the role-based access
     filter regardless of what the LLM produced (doc §9.2) — validation and
