@@ -106,11 +106,50 @@ def build_fake_call_stage(slow: bool):
     return fake_call_stage
 
 
-if __name__ == "__main__":
+def preflight() -> list[str]:
+    """Warn about the one thing that makes this server start fine and then
+    fail every question: no ingested snapshots to query."""
+    from app.tools.data import curated_root
+
+    root = curated_root()
+    partitions = sorted(root.glob("snapshot_month=*")) if root.exists() else []
+    if partitions:
+        return [f"Data:     {len(partitions)} monthly snapshots in {root}"]
+    return [
+        f"Data:     NONE FOUND in {root}",
+        "          Queries will fail until you seed it:",
+        "            python scripts/seed_synthetic_data.py",
+    ]
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--slow", action="store_true", help="Simulate free-tier model latency.")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
+
+    lines = [
+        "",
+        "  Portfolio Intelligence Agent — mock backend",
+        "",
+        f"  API:      http://localhost:{args.port}",
+        "  Models:   mocked (no API keys, no free-tier quota used)",
+        f"  Latency:  {'simulated per stage' if args.slow else 'none — pass --slow to see streaming states'}",
+    ]
+    lines += [f"  {line}" for line in preflight()]
+    lines += [
+        "",
+        "  Start the web UI in another terminal:",
+        "    cd web && npm run dev",
+        "",
+        "  Ctrl+C to stop.",
+        "",
+    ]
+    # uvicorn runs at log_level=warning to keep per-request noise down,
+    # which also suppresses its own "Uvicorn running on ..." banner — so
+    # without this the server starts and prints nothing at all, which
+    # reads exactly like a hang.
+    print("\n".join(lines), flush=True)
 
     fake_call_stage = build_fake_call_stage(args.slow)
 
@@ -119,3 +158,7 @@ if __name__ == "__main__":
         patch("app.graph.research_nodes.call_stage", side_effect=fake_call_stage),
     ):
         uvicorn.run("app.api.main:app", host="0.0.0.0", port=args.port, log_level="warning")
+
+
+if __name__ == "__main__":
+    main()
