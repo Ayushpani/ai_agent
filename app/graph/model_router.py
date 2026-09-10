@@ -145,6 +145,11 @@ def call_stage(
                 temperature=temperature,
                 max_tokens=max_tokens,
                 api_key=_api_key_for(model_id),
+                # A shared free-tier pool being momentarily saturated
+                # (HTTP 429) is common and usually clears within seconds —
+                # retry the SAME model a couple of times with backoff
+                # before giving up on it and moving to the next candidate.
+                num_retries=2,
             )
             quota_monitor.record_call(provider)
             return response.choices[0].message.content
