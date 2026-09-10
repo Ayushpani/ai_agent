@@ -45,13 +45,15 @@ def test_excel_export_excludes_direct_and_pseudo_pii_by_default():
     spec = ChartSpec(chart_type=ChartType.kpi_callout)
     wb_bytes = build_excel_workbook(df, spec, "q", "SELECT 1", "EMP1", ["2026-08"])
     assert len(wb_bytes) > 0
-    # None of the excluded columns' *names* should appear in the Data sheet header row.
+
+    # Check the Data sheet specifically — the excluded columns must not
+    # appear as actual columns there. (The Cover sheet's disclaimer prose
+    # legitimately names them, e.g. "UCID ... are excluded by default",
+    # which a whole-workbook substring search would wrongly flag.)
     import io
-    import zipfile
-    z = zipfile.ZipFile(io.BytesIO(wb_bytes))
-    shared_strings = z.read("xl/sharedStrings.xml").decode("utf-8", errors="ignore")
+    data_df = pd.read_excel(io.BytesIO(wb_bytes), sheet_name="Data")
     for col in EXCLUDED_EXPORT_COLUMNS:
-        assert col not in shared_strings
+        assert col not in data_df.columns
 
 
 def test_mask_pii_leaves_no_plaintext_customer_name():

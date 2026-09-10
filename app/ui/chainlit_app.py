@@ -150,7 +150,7 @@ async def on_message(message: cl.Message) -> None:
         actions.append(cl.Action(
             name="download_workbook",
             payload={"session_id": session_id},
-            label="📥 Download analysis workbook",
+            label="Download analysis workbook",
         ))
 
     content = final_result.get("narration") or "No answer produced."
