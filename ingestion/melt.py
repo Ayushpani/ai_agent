@@ -48,9 +48,14 @@ def melt_monthly_groups(
 ) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
     """Split df into (remainder_wide_df, {group_name: long_df}).
 
-    Each long_df has columns [id_column, month, value] where `value` is the
-    original cell content for that (loan, month) pair. remainder_wide_df is
-    the input with the melted columns dropped.
+    Each long_df has columns [loan_id, month, value] where `value` is the
+    original cell content for that (loan, month) pair. The join key is
+    always named `loan_id` regardless of the source id_column's actual
+    name, so every long table has a predictable, stable schema — this is
+    what config/schema_card.yaml's long_format domains document, and what
+    the SQL Generator is grounded on; a mismatch here means it generates
+    SQL against a column that doesn't exist. remainder_wide_df is the
+    input with the melted columns dropped (still under its original name).
     """
     if groups is None:
         groups = detect_monthly_column_groups(list(df.columns))
@@ -63,6 +68,7 @@ def melt_monthly_groups(
         long_df = sub.melt(id_vars=[id_column], value_vars=cols, var_name="_col", value_name="value")
         long_df["month"] = long_df["_col"].apply(lambda c, p=prefix: _parse_month_token(c, p))
         long_df = long_df.drop(columns=["_col"]).dropna(subset=["month"])
+        long_df = long_df.rename(columns={id_column: "loan_id"})
         long_tables[_slugify(prefix)] = long_df.reset_index(drop=True)
         melted_cols.extend(cols)
 

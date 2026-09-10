@@ -34,7 +34,11 @@ def test_melt_monthly_groups_produces_long_format():
     assert set(remainder.columns) == {"LOAN_AGREEMENT_NO", "PRODUCT"}
     long_df = long_tables["bounce"]
     assert len(long_df) == 4
-    assert set(long_df.columns) == {"LOAN_AGREEMENT_NO", "value", "month"}
+    # The join key is always standardized to `loan_id` regardless of the
+    # source id_column's actual name (config/schema_card.yaml's
+    # long_format domains document `loan_id`; a physical mismatch here
+    # is what generates SQL against a column that doesn't exist).
+    assert set(long_df.columns) == {"loan_id", "value", "month"}
 
 
 def test_melt_handles_new_month_appended_upstream_without_code_change():

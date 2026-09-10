@@ -139,24 +139,24 @@ domains:
   risk_classification:
     table: irac_history
     long_format: true
+    # This is the melted "IRAC LAN Level {Mon YY}" column group (doc
+    # §2.1.1) — it is LAN-level only; PRODUCT/UCIC/UCIC-Finance level
+    # IRAC series are separate source column groups not yet ingested.
+    # Physical columns are exactly what ingestion/melt.py produces:
+    # [loan_id, month, value] — do not add columns here that melt does
+    # not actually emit, or the SQL Generator will write queries against
+    # columns that don't exist.
     columns:
       - name: loan_id
         type: string
-      - name: level
-        type: string
-        allowed_values: [LAN, PRODUCT, UCIC, UCIC_FINANCE]
       - name: month
         type: date
-      - name: stage
+      - name: value
         type: string
-        note: Exact IRAC label set pending credit-team sign-off.
+        note: >
+          The IRAC stage label for this LAN in this month (LAN-level
+          only). Exact label set pending credit-team sign-off.
         status: pending_sme_definition
-      - name: dpd
-        type: integer
-      - name: npa_reason
-        type: string
-      - name: npa_date
-        type: date
 
   credit:
     table: main
@@ -223,23 +223,25 @@ domains:
   bounce:
     table: bounce_history
     long_format: true
+    # This is the melted "Bounce {Mon YY}" column group (doc §2.1.1).
+    # Physical columns are exactly what ingestion/melt.py produces:
+    # [loan_id, month, value]. Bounce Reason / Bounce Groupping /
+    # Tech-non-Tech are separate, NOT month-suffixed columns in the
+    # source MIS (doc §2.1.2) — they are not part of this melt group and
+    # are not yet ingested at all. Do not add them here until they are
+    # actually captured by ingestion, or the SQL Generator will write
+    # queries against columns that don't exist.
     columns:
       - name: loan_id
         type: string
       - name: month
         type: date
       - name: value
-        type: decimal
-      - name: bounce_reason
-        type: string
-      - name: bounce_grouping
-        type: string
-      - name: tech_non_tech
-        type: string
+        type: integer
+        note: 1 if the installment bounced that month, 0 otherwise.
 
 # Columns pending SME sign-off are excluded from get_schema_card() output
 # by default. See app/tools/data.py:get_schema_card.
 pending_sme_definition_columns:
   - AUF_1PLUS_LAN
-  - irac_history.stage
   - Finance_level (glossary)
