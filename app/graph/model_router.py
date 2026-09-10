@@ -13,7 +13,7 @@ will eventually 404 the way any specific "current best free model"
 claim would. Rather than re-editing this file every time that happens,
 every stage's model list is overridable from the environment:
 
-    ROUTER_MODELS=openrouter/some-provider/some-model:free,openrouter/fallback:free
+    ROUTER_MODELS=some-provider/some-model:free,fallback-provider/fallback:free
     SQL_GENERATOR_MODELS=...
     ANALYST_MODELS=...
     NARRATOR_MODELS=...
@@ -21,9 +21,13 @@ every stage's model list is overridable from the environment:
 (comma-separated, first entry = primary, rest = failover chain). To find
 a slug that is actually live right now: go to
 https://openrouter.ai/models, filter to Free, open a model, and copy
-the exact string LiteLLM's code sample shows after "openrouter/" — the
+the bare slug shown there (e.g. "google/gemma-4-26b-a4b-it:free") — the
 human-readable name shown in the OpenRouter UI (e.g. "Google: Gemma 4
-31B (free)") is NOT the API slug and will not work here directly.
+26B A4B (free)") is NOT the slug and will not work. You do not need to
+add an "openrouter/" prefix yourself — _normalize_model_id below adds
+it automatically for anything without a recognized provider prefix,
+since that prefix is a LiteLLM routing detail OpenRouter's own site
+never shows.
 """
 from __future__ import annotations
 
@@ -75,11 +79,27 @@ class AllProvidersExhaustedError(RuntimeError):
     """
 
 
+_KNOWN_PROVIDER_PREFIXES = ("openrouter/", "cloudflare/")
+
+
+def _normalize_model_id(model_id: str) -> str:
+    """LiteLLM needs a '<provider>/<model>' route prefix to know which
+    API to call, but OpenRouter's own site never shows that prefix — it
+    only ever displays the bare slug (e.g. 'google/gemma-4-26b-a4b-it:free').
+    Pasting that bare slug straight from openrouter.ai/models is the
+    expected, easy mistake, so default anything without a recognized
+    prefix to OpenRouter rather than erroring on it.
+    """
+    if model_id.startswith(_KNOWN_PROVIDER_PREFIXES):
+        return model_id
+    return f"openrouter/{model_id}"
+
+
 def get_stage_models(stage: str) -> list[str]:
     env_var = _ENV_VAR_FOR_STAGE.get(stage)
     raw = os.environ.get(env_var) if env_var else None
     if raw:
-        return [m.strip() for m in raw.split(",") if m.strip()]
+        return [_normalize_model_id(m.strip()) for m in raw.split(",") if m.strip()]
     return _DEFAULT_STAGE_MODELS.get(stage, [])
 
 
