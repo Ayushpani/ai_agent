@@ -187,4 +187,14 @@ def build_probe_sql(spec: ProbeSpec, role: str | None) -> tuple[str, ChartSpec]:
 
 
 def _tidy(sql: str) -> str:
-    return " ".join(line.strip() for line in sql.strip().splitlines() if line.strip())
+    """Strips the template's leading indentation but KEEPS line breaks —
+    this SQL is shown to the employee in the panel's SQL view and written
+    into the workbook, and a single 400-character line is unreadable in
+    both.
+    """
+    lines = [line.rstrip() for line in sql.strip("\n").splitlines()]
+    lines = [line for line in lines if line.strip()]
+    if not lines:
+        return ""
+    indent = min(len(line) - len(line.lstrip()) for line in lines)
+    return "\n".join(line[indent:] for line in lines)

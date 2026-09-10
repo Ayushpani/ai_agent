@@ -10,9 +10,22 @@ export type StageName =
   | "execute"
   | "handled_error"
   | "run_tools"
+  | "plan_research"
+  | "run_probes"
+  | "synthesize"
   | "analyze"
   | "narrate"
   | "chart";
+
+export type ResearchDepth = "standard" | "deep";
+
+export type ProbeType =
+  | "decompose_by"
+  | "trend_by_segment"
+  | "period_comparison"
+  | "concentration"
+  | "distribution"
+  | "related_metric";
 
 export interface RouterOutput {
   intent: "lookup" | "aggregation" | "comparison" | "trend" | "forecast" | "anomaly";
@@ -85,12 +98,51 @@ export interface AnalystOutput {
   follow_up_question: string | null;
 }
 
+export type ChartType =
+  | "line"
+  | "bar"
+  | "grouped_bar"
+  | "multi_line"
+  | "area"
+  | "pie"
+  | "scatter"
+  | "kpi_callout";
+
 export interface ChartSpec {
-  chart_type: "line" | "bar" | "pie" | "scatter" | "kpi_callout";
+  chart_type: ChartType;
   x_field: string | null;
   y_field: string | null;
   series_field: string | null;
+  value_fields: string[];
   forecast_forced: boolean;
+}
+
+export interface ProbeSpec {
+  probe_type: ProbeType;
+  title: string;
+  rationale: string;
+  metric: string;
+  dimension: string | null;
+  top_n: number;
+}
+
+export interface ResearchPlan {
+  should_go_deeper: boolean;
+  reasoning: string;
+  probes: ProbeSpec[];
+}
+
+export interface AnalysisPanel {
+  panel_id: string;
+  title: string;
+  rationale: string;
+  probe_type: ProbeType | null;
+  chart_spec: ChartSpec;
+  records: Record<string, unknown>[];
+  signals: SignalsPackage | null;
+  sql: string;
+  headline: string | null;
+  error: string | null;
 }
 
 export interface DataFramePayload {
@@ -103,6 +155,8 @@ export interface FinalResult {
   chart_spec: ChartSpec | null;
   query_result: DataFramePayload | null;
   signals: SignalsPackage | null;
+  panels: AnalysisPanel[];
+  research_plan: ResearchPlan | null;
   error: string | null;
   final_sql: string | null;
 }
@@ -124,6 +178,8 @@ export interface StageEndEvent {
     analyst_output?: AnalystOutput;
     narration?: string;
     chart_spec?: ChartSpec;
+    research_plan?: ResearchPlan;
+    panels?: AnalysisPanel[];
     [key: string]: unknown;
   };
 }

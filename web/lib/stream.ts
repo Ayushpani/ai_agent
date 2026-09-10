@@ -1,4 +1,4 @@
-import type { StreamEvent } from "./types";
+import type { ResearchDepth, StreamEvent } from "./types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -19,12 +19,18 @@ export async function* streamAsk(
   question: string,
   sessionId: string,
   identity: AskIdentity,
+  researchDepth: ResearchDepth = "standard",
   signal?: AbortSignal
 ): AsyncGenerator<StreamEvent> {
   const res = await fetch(`${API_BASE_URL}/ask/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId, question, identity }),
+    body: JSON.stringify({
+      session_id: sessionId,
+      question,
+      identity,
+      research_depth: researchDepth,
+    }),
     signal,
   });
 

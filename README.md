@@ -57,24 +57,30 @@ cp .env.example .env   # fill in OPENROUTER_API_KEY / CLOUDFLARE_API_TOKEN
 
 ## Try it without any data or API keys
 
-Generate a synthetic portfolio and run the deterministic pipeline end to
-end (no LLM calls involved):
+Seed a synthetic portfolio:
 
-```python
-from ingestion.synthetic_data import generate_synthetic_mis
-from ingestion.pipeline import run_ingestion_from_dataframe
-
-for i, month in enumerate(["2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08"]):
-    run_ingestion_from_dataframe(generate_synthetic_mis(n_loans=2000, seed=i), month)
+```bash
+python scripts/seed_synthetic_data.py --months 8 --loans 2000
 ```
 
-Then run the test suite, which exercises the full graph (router →
-SQL generator → DuckDB → tools → analyst → narrator → chart) with the
-LLM stages mocked, so it needs no API keys and no network access:
+Run the whole product with the four model calls mocked out — every other
+layer (SQL validation, access scoping, DuckDB, the statistical tools,
+the workbook builder) runs for real:
+
+```bash
+python scripts/mock_backend.py        # terminal 1
+cd web && npm run dev                 # terminal 2
+```
+
+Or run the test suite, which exercises the full graph in both depths
+with the LLM stages mocked, so it needs no API keys and no network:
 
 ```bash
 pytest tests/ -q
 ```
+
+Tests ingest into a temp directory (via `PORTFOLIO_CURATED_ROOT`), so
+running them never disturbs the dataset you seeded above.
 
 ## Running for real
 
@@ -99,6 +105,38 @@ returns the narrated answer, chart spec, and signals JSON in one response.
 event per pipeline stage as it actually starts/finishes — what the Next.js
 UI's live step timeline is built on. `GET /download/{session_id}` returns
 the Excel workbook for the last chartable result in that session.
+
+## Deep research
+
+Standard depth answers a question with one query. Deep depth — opt-in per
+request, from the toggle in the chat input or `"research_depth": "deep"`
+on the API — inserts a planned investigation round:
+
+```
+Tools -> plan_research -> run_probes -> synthesize -> Narrator
+```
+
+`plan_research` asks a model **which** follow-up investigations are worth
+running. `app/tools/probes.py` decides **how** each becomes SQL, from a
+closed catalog: `decompose_by`, `trend_by_segment`, `period_comparison`,
+`concentration`, `distribution`, `related_metric`.
+
+The planner never writes SQL, for two reasons. Free-tier models are
+already unreliable at producing one correct query — four more free-form
+statements multiply that failure mode. And the metric/dimension it picks
+are the only LLM-chosen values that reach SQL at all, so both are
+allow-listed against the caller's role-filtered schema card before
+interpolation: an invented column, or one the role may not see, is
+rejected rather than substituted (`tests/unit/test_probes.py`).
+
+Each probe is measured with the same deterministic tools as the headline
+and carries a **computed** one-line headline, so panel text cannot drift
+from panel numbers. `synthesize` then reasons across every panel at once
+rather than restating each in turn. A probe that fails becomes a panel
+carrying its error — three good panels beat none.
+
+Cost: one planner call plus one synthesis call on top of the standard
+pipeline. The probes are pure SQL.
 
 ## The forced-disambiguation rule
 
@@ -141,12 +179,15 @@ dimension is more dangerous than one clarifying turn. See
   from a query result's dtype and column-name heuristics. A production
   build should instead have the SQL Generator declare its own output
   column roles so this isn't inferred.
-- `forecast_tracking_error` and multi-level `decompose` wiring into the
-  graph are implemented as standalone tools (`app/tools/forecast.py`,
-  `app/tools/stats.py`) with unit tests, but the graph's fixed-per-intent
-  sequencing (§7.6) currently calls the single-level path; wiring the
-  finer-grained decomposition and cross-request tracking-error lookup is
-  the natural next increment once real multi-month data exists.
+- `forecast_tracking_error` is implemented and unit-tested
+  (`app/tools/forecast.py`) but not yet wired into the graph — it needs a
+  store of what was previously forecast for a series, which the POC's
+  in-memory session cache doesn't provide.
+- Deep research goes exactly one level deep: the planner proposes probes
+  against the headline, and the probes do not themselves spawn
+  follow-ups. That bound is deliberate (it keeps cost and latency
+  predictable), but a genuinely iterative loop — synthesise, decide
+  what's still unexplained, probe again — is the natural next increment.
 - Storage is local Parquet only; the S3 `httpfs` swap (doc §5.3 Phase 2)
   is a connection-string change with no code change to the SQL layer,
   but isn't wired up here since the POC doesn't need it.

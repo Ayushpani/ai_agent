@@ -9,6 +9,9 @@ import {
   PenLine,
   BarChart3,
   HelpCircle,
+  Telescope,
+  Layers,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -19,6 +22,9 @@ export const STAGE_ORDER: StageName[] = [
   "execute",
   "handled_error",
   "run_tools",
+  "plan_research",
+  "run_probes",
+  "synthesize",
   "analyze",
   "narrate",
   "chart",
@@ -31,6 +37,9 @@ export const STAGE_LABEL: Record<StageName, string> = {
   execute: "Executing query",
   handled_error: "Could not proceed",
   run_tools: "Running analytical tools",
+  plan_research: "Planning deeper analysis",
+  run_probes: "Investigating the data",
+  synthesize: "Synthesising across panels",
   analyze: "Analyst reasoning",
   narrate: "Writing the answer",
   chart: "Choosing chart type",
@@ -43,6 +52,9 @@ export const STAGE_ICON: Record<StageName, LucideIcon> = {
   execute: Play,
   handled_error: AlertTriangle,
   run_tools: Calculator,
+  plan_research: Telescope,
+  run_probes: Layers,
+  synthesize: Sparkles,
   analyze: BrainCircuit,
   narrate: PenLine,
   chart: BarChart3,
@@ -92,12 +104,31 @@ export function summarizeStage(event: StageEndEvent): { kind: "text" | "sql"; co
       }
       return { kind: "text", content: parts.length > 0 ? parts.join("; ") : "No notable signals." };
     }
-    case "analyze": {
+    case "analyze":
+    case "synthesize": {
       const findings = update.analyst_output?.findings;
       if (findings && findings.length > 0) {
         return { kind: "text", content: findings.map((f) => `- ${f.text}`).join("\n") };
       }
       return { kind: "text", content: "Skipped (lookup question)." };
+    }
+    case "plan_research": {
+      const plan = update.research_plan;
+      if (!plan) return null;
+      if (!plan.should_go_deeper) {
+        return { kind: "text", content: plan.reasoning || "Answering at headline level." };
+      }
+      const lines = plan.probes.map((p) => `- ${p.title}: ${p.rationale}`);
+      return { kind: "text", content: [plan.reasoning, ...lines].filter(Boolean).join("\n") };
+    }
+    case "run_probes": {
+      const panels = update.panels;
+      if (!panels || panels.length === 0) return null;
+      const ok = panels.filter((p) => !p.error).length;
+      return {
+        kind: "text",
+        content: `${ok} of ${panels.length} analyses returned data.`,
+      };
     }
     case "chart": {
       const spec = update.chart_spec;

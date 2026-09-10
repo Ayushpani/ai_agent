@@ -5,6 +5,9 @@ import { Download } from "lucide-react";
 import { StepTimeline, type StepState } from "./StepTimeline";
 import { StreamingText } from "./StreamingText";
 import { ChartRenderer } from "./ChartRenderer";
+import { SignalStrip } from "./SignalStrip";
+import { AnalysisPanelCard } from "./AnalysisPanelCard";
+import { DataTable } from "./DataTable";
 import { downloadUrl } from "@/lib/stream";
 import type { FinalResult } from "@/lib/types";
 
@@ -17,13 +20,11 @@ export interface AssistantTurnData {
 }
 
 export function AssistantTurn({ turn }: { turn: AssistantTurnData }) {
-  const showChart =
-    turn.final?.chart_spec &&
-    turn.final.chart_spec.chart_type !== "kpi_callout" &&
-    turn.final.query_result;
-
-  const canDownload =
-    turn.final?.chart_spec && turn.final.chart_spec.chart_type !== "kpi_callout" && turn.final.query_result;
+  const final = turn.final;
+  const panels = final?.panels ?? [];
+  const hasChart =
+    final?.chart_spec && final.chart_spec.chart_type !== "kpi_callout" && final.query_result;
+  const canDownload = Boolean(hasChart);
 
   return (
     <motion.div
@@ -34,24 +35,55 @@ export function AssistantTurn({ turn }: { turn: AssistantTurnData }) {
     >
       <StepTimeline steps={turn.steps} />
 
-      {turn.final?.narration && (
+      {final?.narration && (
         <div className="rounded-xl border border-border bg-surface px-5 py-4">
           <StreamingText
-            key={turn.final.narration}
-            text={turn.final.narration}
+            key={final.narration}
+            text={final.narration}
             className="text-[15.5px] leading-[1.7] text-foreground"
           />
         </div>
       )}
 
-      {turn.final?.error && !turn.final?.narration && (
+      {final?.error && !final?.narration && (
         <div className="rounded-xl border border-danger/30 bg-danger/5 px-5 py-4 text-[14px] text-danger">
-          {turn.final.error}
+          {final.error}
         </div>
       )}
 
-      {showChart && turn.final?.chart_spec && turn.final?.query_result && (
-        <ChartRenderer spec={turn.final.chart_spec} data={turn.final.query_result} />
+      {final?.signals && <SignalStrip signals={final.signals} />}
+
+      {hasChart && final?.chart_spec && final?.query_result && (
+        <div className="rounded-xl border border-border bg-surface p-4">
+          <ChartRenderer spec={final.chart_spec} rows={final.query_result.records} height={300} />
+        </div>
+      )}
+
+      {final?.query_result && final.query_result.records.length > 0 && (
+        <details className="group rounded-xl border border-border bg-surface px-4 py-3">
+          <summary className="cursor-pointer list-none text-[13px] font-medium text-muted transition-colors hover:text-accent">
+            Underlying rows ({final.query_result.records.length})
+          </summary>
+          <div className="pt-3">
+            <DataTable rows={final.query_result.records} />
+          </div>
+        </details>
+      )}
+
+      {panels.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-3 pt-1">
+            <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
+              Further analysis
+            </h2>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {panels.map((panel, i) => (
+              <AnalysisPanelCard key={panel.panel_id} panel={panel} index={i} />
+            ))}
+          </div>
+        </div>
       )}
 
       {canDownload && (
@@ -61,6 +93,11 @@ export function AssistantTurn({ turn }: { turn: AssistantTurnData }) {
         >
           <Download className="h-4 w-4 text-accent" strokeWidth={2} />
           Download analysis workbook
+          {panels.length > 0 && (
+            <span className="text-[12px] text-muted">
+              ({panels.length + 1} dashboards)
+            </span>
+          )}
         </a>
       )}
     </motion.div>

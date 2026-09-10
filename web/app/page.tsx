@@ -8,7 +8,7 @@ import { AssistantTurn, type AssistantTurnData } from "@/components/AssistantTur
 import { StepState } from "@/components/StepTimeline";
 import { streamAsk } from "@/lib/stream";
 import { summarizeStage, STAGE_ORDER } from "@/lib/stages";
-import type { StageName } from "@/lib/types";
+import type { ResearchDepth, StageName } from "@/lib/types";
 
 // POC identity stand-in for the OIDC-derived identity in production
 // (mirrors app/ui/chainlit_app.py's on_chat_start defaults).
@@ -29,6 +29,7 @@ const EXAMPLE_QUESTIONS = [
 export default function Home() {
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [depth, setDepth] = useState<ResearchDepth>("standard");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
@@ -60,7 +61,7 @@ export default function Home() {
       };
 
       try {
-        for await (const event of streamAsk(question, sessionId, IDENTITY)) {
+        for await (const event of streamAsk(question, sessionId, IDENTITY, depth)) {
           if (event.kind === "stage_start") {
             updateAssistant((prev) => ({
               ...prev,
@@ -88,6 +89,8 @@ export default function Home() {
             chart_spec: null,
             query_result: null,
             signals: null,
+            panels: [],
+            research_plan: null,
             error:
               err instanceof Error
                 ? `Could not reach the agent backend: ${err.message}`
@@ -100,11 +103,11 @@ export default function Home() {
         scrollToBottom();
       }
     },
-    [scrollToBottom]
+    [depth, scrollToBottom]
   );
 
   return (
-    <div className="mx-auto flex h-dvh w-full max-w-3xl flex-col px-4">
+    <div className="mx-auto flex h-dvh w-full max-w-5xl flex-col px-4">
       <header className="flex flex-col gap-1 py-6">
         <h1 className="text-[22px] font-semibold tracking-tight text-foreground">
           Portfolio Intelligence Agent
@@ -129,7 +132,7 @@ export default function Home() {
       </div>
 
       <div className="sticky bottom-0 bg-background pb-6 pt-2">
-        <ChatInput onSubmit={ask} disabled={isStreaming} />
+        <ChatInput onSubmit={ask} disabled={isStreaming} depth={depth} onDepthChange={setDepth} />
       </div>
     </div>
   );
@@ -150,6 +153,10 @@ function EmptyState({ onPick }: { onPick: (q: string) => void }) {
           </button>
         ))}
       </div>
+      <p className="pt-2 text-[13px] leading-relaxed text-muted">
+        Turn on Deep research below to have the agent plan and run additional breakdowns —
+        attribution by segment, period comparisons, concentration — before it answers.
+      </p>
     </div>
   );
 }

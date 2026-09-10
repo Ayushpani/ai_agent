@@ -11,18 +11,33 @@ emoji anywhere in the UI.
 
 ## What it does
 
-- Streams each pipeline stage (classify → generate SQL → execute →
-  tools → analyst → narrate → chart) as it actually starts and
-  finishes, driven by the backend's real LangGraph event stream — not
-  a fake typing animation.
-- Shows the generated SQL, row counts, key signals, and analyst
-  findings inline as each step completes.
+- Streams each pipeline stage as it actually starts and finishes, driven
+  by the backend's real LangGraph event stream — not a fake typing
+  animation. In deep mode that includes the research plan (with each
+  probe and why it was chosen), probe execution, and synthesis.
+- Shows the generated SQL, row counts, key signals, and analyst findings
+  inline as each step completes.
 - Reveals the final narration with a word-by-word write-on effect.
-- Renders the chart client-side (Recharts) from the same chart-type
-  decision and query result the Excel workbook uses, so the two never
-  disagree.
+- Renders a KPI strip and the headline chart, then a grid of analysis
+  panels — one per probe — each with a chart / table / SQL view switch
+  and its computed headline.
+- Renders charts client-side (Recharts) from the same chart-type
+  decision and rows the Excel workbook uses, so the two never disagree.
 - Offers a "Download analysis workbook" link straight to the backend's
   `/download/{session_id}` endpoint.
+
+## Chart colors
+
+`lib/palette.ts` holds the categorical slots, in the validated order from
+the dataviz reference palette — that order is the colorblind-safety
+mechanism, not decoration. Assign slots in order; never cycle them.
+
+The product navy (`#1f4e79`) is UI chrome only and is deliberately not a
+series color: the first cut of this file used a monochrome navy ramp
+categorically, which hard-fails the chroma-floor and normal-vision gates
+(adjacent steps read as the same color). Three light-mode slots sit below
+3:1 contrast, which is why every panel ships a table view — that is the
+required relief, not a nice-to-have.
 
 ## Setup
 
