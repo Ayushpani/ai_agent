@@ -5,6 +5,21 @@
 # signs off (see doc §2.1.2 "SME dependency").
 
 domains:
+  temporal:
+    table: main
+    columns:
+      - name: snapshot_month
+        type: string
+        note: >
+          The reporting month of this row, format 'YYYY-MM' (e.g.
+          '2026-08'). Every row in `main` belongs to exactly one
+          snapshot_month partition (doc §5.2) — this is the column to
+          GROUP BY / filter on for any trend, MoM, or YoY question
+          answered directly against `main`. It is derived from the
+          storage partition path at query time, not a column in the
+          source Excel extract, so it will not appear in any other
+          domain's column list.
+
   loan_identity:
     table: main
     columns:
