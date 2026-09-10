@@ -10,7 +10,16 @@ Run with: chainlit run app/ui/chainlit_app.py -w
 """
 from __future__ import annotations
 
+import sys
 import uuid
+from pathlib import Path
+
+# Chainlit imports this file directly by path (`chainlit run app/ui/...`)
+# without adding the project root to sys.path first, so the absolute
+# `app.*` imports below fail unless we add it ourselves.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 import chainlit as cl
 
