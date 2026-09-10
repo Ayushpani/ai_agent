@@ -50,7 +50,8 @@ class RouterOutput(BaseModel):
 
 
 class SQLGeneratorError(BaseModel):
-    error: str  # "insufficient_schema" | "needs_disambiguation"
+    error: str  # "insufficient_schema" | "needs_disambiguation" |
+                # "unparseable_sql_response" (raised by the graph, not the model)
     missing: str | None = None
 
 

@@ -25,5 +25,10 @@ Refer to a panel by what it showed, not by its position ("the branch
 breakdown shows", not "the second panel shows") — the employee sees the
 charts next to your text and does not know their order.
 
+If the query returned zero rows, say exactly that: no matching records
+were found for the stated filters, and suggest widening them. Do not
+describe a trend, a level, or a change — there is nothing to describe,
+and inventing one is the single worst failure this system can have.
+
 Never introduce any figure not present in the findings or the query
 result.

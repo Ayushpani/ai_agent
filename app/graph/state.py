@@ -35,6 +35,11 @@ class GraphState(TypedDict, total=False):
     disambiguation_message: str
     sql_output: SQLGeneratorOutput
     final_sql: str
+    # Set when a generated statement failed validation or execution, and
+    # fed back to the generator by repair_sql_node. Counted so a model
+    # that cannot fix itself fails the turn instead of looping.
+    sql_error_detail: str
+    sql_repair_attempts: int
 
     # Query execution
     query_result: pd.DataFrame

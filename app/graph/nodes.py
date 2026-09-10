@@ -30,7 +30,7 @@ from app.models.schemas import (
 from app.prompts import load_prompt
 from app.security.sql_validator import extract_sql_statement
 from app.tools.chart import QueryShape, choose_chart_type
-from app.tools.data import get_schema_card, run_sql
+from app.tools.data import get_schema_card, get_snapshot_inventory, run_sql
 from app.tools.dq import data_quality_scan, sanity_check_trend
 from app.tools.forecast import forecast, forecast_feasibility
 from app.tools.signal_boundary import package_signals
@@ -92,13 +92,26 @@ def router_node(state: GraphState) -> dict:
     return update
 
 
-def sql_generator_node(state: GraphState) -> dict:
+MAX_SQL_REPAIR_ATTEMPTS = 1
+
+# Distinct from the model *declaring* insufficient_schema: this one means
+# its response could not be read as SQL at all.
+UNPARSEABLE_RESPONSE_ERROR = "unparseable_sql_response"
+
+
+def _generate_sql(state: GraphState, repair_context: str = "") -> SQLGeneratorOutput:
     role = state["access_scope"].role
     schema_card = get_schema_card(role=role)
+    # The months that actually exist, not the model's guess at them: a
+    # question like "the last 6 months" was otherwise answered with
+    # invented literals, which silently returns zero rows.
+    months = [s.snapshot_month for s in get_snapshot_inventory()]
     context = (
         f"Question: {state['question']}\n"
         f"Intent metadata: {state['router_output'].model_dump_json()}\n"
+        f"Available snapshot_month values (oldest to newest): {months}\n"
         f"Schema card: {json.dumps(schema_card)}\n"
+        f"{repair_context}"
     )
     # Reasoning-style free models spend a large chunk of their budget on a
     # chain-of-thought preamble before emitting the actual SQL — 1024
@@ -108,27 +121,59 @@ def sql_generator_node(state: GraphState) -> dict:
 
     error_payload = extract_json_object(raw_stripped)
     if error_payload is not None and "error" in error_payload:
-        sql_output = SQLGeneratorOutput(error=SQLGeneratorError.model_validate(error_payload))
-    else:
-        extracted_sql = extract_sql_statement(raw_stripped)
-        if extracted_sql is None:
-            sql_output = SQLGeneratorOutput(
-                error=SQLGeneratorError(
-                    error="insufficient_schema",
-                    missing=(
-                        "model response contained no parseable SQL statement "
-                        "with the required {ACCESS_SCOPE_FILTER} placeholder "
-                        "(model may be a reasoning variant that never reached "
-                        "its final answer within the token budget)"
-                    ),
-                )
-            )
-        else:
-            sql_output = SQLGeneratorOutput(sql=extracted_sql)
+        return SQLGeneratorOutput(error=SQLGeneratorError.model_validate(error_payload))
 
+    extracted_sql = extract_sql_statement(raw_stripped)
+    if extracted_sql is None:
+        return SQLGeneratorOutput(
+            error=SQLGeneratorError(
+                error=UNPARSEABLE_RESPONSE_ERROR,
+                missing=(
+                    "model response contained no parseable SQL statement "
+                    "with the required {ACCESS_SCOPE_FILTER} placeholder "
+                    "(model may be a reasoning variant that never reached "
+                    "its final answer within the token budget)"
+                ),
+            )
+        )
+    return SQLGeneratorOutput(sql=extracted_sql)
+
+
+def sql_generator_node(state: GraphState) -> dict:
     return {
-        "sql_output": sql_output,
+        "sql_output": _generate_sql(state),
+        "sql_repair_attempts": 0,
         **_with_model_id(state, "sql_generator", "stage:sql_generator"),
+    }
+
+
+def repair_sql_node(state: GraphState) -> dict:
+    """Second (and last) shot at a statement that failed validation or
+    execution, with the engine's own error handed back to the model.
+
+    Free-tier models get DuckDB specifics wrong in ways they can fix once
+    told — the failure that motivated this was CAST('month' AS DATE),
+    where the router's `time_grain` value leaked into the SQL as if it
+    were a column. Without this the turn died on a raw engine error; the
+    attempt counter keeps it to one extra call, so cost stays bounded.
+    """
+    tracer = StageTracer(state)
+    tracer.mark("repair_sql")
+    failed_sql = state["sql_output"].sql or "(no statement produced)"
+    repair_context = (
+        "\nYour previous attempt FAILED. Do not repeat it.\n"
+        f"Previous statement:\n{failed_sql}\n"
+        f"Engine error:\n{state.get('sql_error_detail', '')}\n"
+        "Re-read the schema card and the TIME section, then output one "
+        "corrected SELECT. Use only column names present in the schema "
+        "card, and keep the {ACCESS_SCOPE_FILTER} placeholder."
+    )
+    return {
+        "sql_output": _generate_sql(state, repair_context),
+        "sql_repair_attempts": state.get("sql_repair_attempts", 0) + 1,
+        "error": None,
+        **_with_model_id(state, "sql_generator_repair", "stage:sql_generator"),
+        **tracer.as_update(),
     }
 
 
@@ -136,13 +181,35 @@ def execute_query_node(state: GraphState) -> dict:
     tracer = StageTracer(state)
     sql_output = state["sql_output"]
     if sql_output.error is not None:
+        detail = f"{sql_output.error.error}: {sql_output.error.missing or ''}".strip()
+        # A declared insufficient_schema/needs_disambiguation is the model
+        # answering correctly — retrying it just invites an invented column
+        # name. Only an unusable *response* is worth a second attempt, so
+        # only that sets the repairable detail the router keys on.
+        repairable = sql_output.error.error == UNPARSEABLE_RESPONSE_ERROR
         return {
-            "error": f"{sql_output.error.error}: {sql_output.error.missing or ''}".strip(),
+            "error": detail,
+            "sql_error_detail": detail if repairable else "",
             **tracer.as_update(),
         }
 
-    df = tracer.run("run_sql", run_sql, sql_output.sql, state["access_scope"])
-    return {"query_result": df, "final_sql": sql_output.sql, "error": None, **tracer.as_update()}
+    # Anything DuckDB or the validator raises is a normal outcome of
+    # letting a model write SQL, not a crash: it becomes state the graph
+    # can route on (repair, then a readable message) instead of a
+    # traceback that takes the whole request down.
+    try:
+        df = tracer.run("run_sql", run_sql, sql_output.sql, state["access_scope"])
+    except Exception as e:
+        detail = f"{type(e).__name__}: {e}"
+        return {"error": detail, "sql_error_detail": detail, **tracer.as_update()}
+
+    return {
+        "query_result": df,
+        "final_sql": sql_output.sql,
+        "error": None,
+        "sql_error_detail": "",
+        **tracer.as_update(),
+    }
 
 
 def tools_node(state: GraphState) -> dict:

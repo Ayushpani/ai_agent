@@ -4,6 +4,10 @@ deep-research branch.
 Standard depth:
     Router -> SQL Generator -> Execute -> Tools -> Analyst -> Narrator -> Chart
 
+A statement that fails validation or execution goes Execute -> Repair SQL
+-> Execute once, with the engine's error handed back to the generator,
+before the turn is failed with a readable message.
+
 Deep depth adds a planned investigation round between the tools and the
 write-up:
     ... -> Tools -> Plan research -> Run probes -> Synthesise -> Narrator -> Chart
@@ -18,10 +22,12 @@ from __future__ import annotations
 from langgraph.graph import END, StateGraph
 
 from app.graph.nodes import (
+    MAX_SQL_REPAIR_ATTEMPTS,
     analyst_node,
     chart_node,
     execute_query_node,
     narrator_node,
+    repair_sql_node,
     router_node,
     sql_generator_node,
     tools_node,
@@ -42,9 +48,16 @@ def _after_router(state: GraphState) -> str:
 
 
 def _after_execute(state: GraphState) -> str:
-    if state.get("error"):
-        return "handled_error"
-    return "run_tools"
+    if not state.get("error"):
+        return "run_tools"
+    # sql_error_detail is set only for failures a second attempt could
+    # plausibly fix (engine/validator errors, an unreadable response) —
+    # not for the model correctly declaring the schema can't answer.
+    if state.get("sql_error_detail") and (
+        state.get("sql_repair_attempts", 0) < MAX_SQL_REPAIR_ATTEMPTS
+    ):
+        return "repair_sql"
+    return "handled_error"
 
 
 def _after_tools(state: GraphState) -> str:
@@ -65,7 +78,27 @@ def _disambiguate_node(state: GraphState) -> dict:
 
 
 def _error_node(state: GraphState) -> dict:
-    return {"narration": f"I couldn't answer that: {state['error']}"}
+    """Terminal, readable failure. The raw engine/validator text is kept
+    (it is what makes a failure diagnosable in the audit log and on
+    screen) but framed so a business user knows whether to rephrase or
+    to escalate, rather than being handed a bare DuckDB exception.
+    """
+    detail = state.get("error") or "unknown error"
+    if detail.startswith("needs_disambiguation"):
+        lead = "I need one more detail before I can answer that."
+    elif detail.startswith("insufficient_schema"):
+        lead = (
+            "I couldn't answer that from the columns available to you. "
+            "The portfolio extract doesn't carry what the question needs:"
+        )
+    else:
+        lead = (
+            "I couldn't answer that. I wrote a query for it, and it failed "
+            "twice against the data, so I'd rather stop than show you a "
+            "number I can't stand behind. Try naming the metric and period "
+            "more explicitly. Technical detail:"
+        )
+    return {"narration": f"{lead} {detail}".strip()}
 
 
 def build_graph():
@@ -75,6 +108,7 @@ def build_graph():
     graph.add_node("disambiguate", _disambiguate_node)
     graph.add_node("generate_sql", sql_generator_node)
     graph.add_node("execute", execute_query_node)
+    graph.add_node("repair_sql", repair_sql_node)
     graph.add_node("handled_error", _error_node)
     graph.add_node("run_tools", tools_node)
     graph.add_node("plan_research", plan_research_node)
@@ -93,8 +127,10 @@ def build_graph():
     graph.add_edge("generate_sql", "execute")
     graph.add_conditional_edges("execute", _after_execute, {
         "handled_error": "handled_error",
+        "repair_sql": "repair_sql",
         "run_tools": "run_tools",
     })
+    graph.add_edge("repair_sql", "execute")
     graph.add_edge("handled_error", END)
 
     graph.add_conditional_edges("run_tools", _after_tools, {

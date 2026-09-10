@@ -24,9 +24,16 @@ logger = get_logger()
 # the employee — internal LangGraph routing/wrapper nodes are filtered out.
 GRAPH_NODE_NAMES = {
     "route", "disambiguate", "generate_sql", "execute",
-    "handled_error", "run_tools", "plan_research", "run_probes",
+    "repair_sql", "handled_error", "run_tools", "plan_research", "run_probes",
     "synthesize", "analyze", "narrate", "chart",
 }
+
+
+FAILURE_NARRATION = (
+    "Something went wrong answering that question. Nothing was returned, "
+    "so please don't treat a partial screen as an answer — the failure is "
+    "recorded in the audit log."
+)
 
 
 def _build_result(result: dict) -> dict[str, Any]:
@@ -90,10 +97,10 @@ def handle_question(
     except Exception as e:
         logger.error("graph_invocation_failed", error=str(e), session_id=session_id)
         _write_audit({}, question, session_id, employee_id, error=str(e), depth=research_depth)
-        return {
-            "narration": "Something went wrong answering that question. The team has been notified.",
-            "error": str(e),
-        }
+        # Full result shape even on failure: both front ends read every
+        # key off this object, and a half-populated result renders as a
+        # blank panel area rather than a stated failure.
+        return {**_build_result({}), "narration": FAILURE_NARRATION, "error": str(e)}
 
     _write_audit(result, question, session_id, employee_id, depth=research_depth)
     return _build_result(result)
@@ -147,10 +154,7 @@ async def stream_question(
         _write_audit(final_state, question, session_id, employee_id, error=str(e), depth=research_depth)
         yield {
             "kind": "final",
-            "result": {
-                "narration": "Something went wrong answering that question. The team has been notified.",
-                "error": str(e),
-            },
+            "result": {**_build_result(final_state), "narration": FAILURE_NARRATION, "error": str(e)},
         }
         return
 

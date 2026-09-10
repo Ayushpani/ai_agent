@@ -12,6 +12,7 @@ import {
   Telescope,
   Layers,
   Sparkles,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ export const STAGE_ORDER: StageName[] = [
   "disambiguate",
   "generate_sql",
   "execute",
+  "repair_sql",
   "handled_error",
   "run_tools",
   "plan_research",
@@ -35,6 +37,7 @@ export const STAGE_LABEL: Record<StageName, string> = {
   disambiguate: "Needs clarification",
   generate_sql: "Generating SQL",
   execute: "Executing query",
+  repair_sql: "Correcting the query",
   handled_error: "Could not proceed",
   run_tools: "Running analytical tools",
   plan_research: "Planning deeper analysis",
@@ -50,6 +53,7 @@ export const STAGE_ICON: Record<StageName, LucideIcon> = {
   disambiguate: HelpCircle,
   generate_sql: DatabaseZap,
   execute: Play,
+  repair_sql: Wrench,
   handled_error: AlertTriangle,
   run_tools: Calculator,
   plan_research: Telescope,
@@ -79,6 +83,14 @@ export function summarizeStage(event: StageEndEvent): { kind: "text" | "sql"; co
         return { kind: "text", content: `Refused: ${update.sql_output.error.error}` };
       }
       return null;
+    }
+    case "repair_sql": {
+      // The engine error that triggered the retry is the useful detail
+      // here — showing the new SQL happens on the next execute step.
+      if (update.sql_output?.sql) {
+        return { kind: "sql", content: update.sql_output.sql };
+      }
+      return { kind: "text", content: "First attempt failed; retrying with the engine error." };
     }
     case "execute": {
       if (update.query_result) {

@@ -86,10 +86,13 @@ def _register_snapshots(con: duckdb.DuckDBPyConnection, root: Path | None = None
     (doc §5.2: trend queries glob across partitions with one SQL statement).
     """
     root = root or curated_root()
-    pattern = str(root / "snapshot_month=*" / "main.parquet")
+    # .as_posix(), not str(): on Windows str() yields backslashes, and the
+    # glob/read_parquet path is safer with forward slashes (DuckDB accepts
+    # them on every platform).
+    pattern = (root / "snapshot_month=*" / "main.parquet").as_posix()
     con.execute(f"""
         CREATE OR REPLACE VIEW main AS
-        SELECT *, regexp_extract(filename, 'snapshot_month=([^/]+)', 1) AS snapshot_month
+        SELECT *, regexp_extract(filename, 'snapshot_month=([0-9]{{4}}-[0-9]{{2}})', 1) AS snapshot_month
         FROM read_parquet('{pattern}', filename=true, hive_partitioning=false)
     """)
 
@@ -97,11 +100,11 @@ def _register_snapshots(con: duckdb.DuckDBPyConnection, root: Path | None = None
         ("bounce_history", "bounce"),
         ("irac_history", "irac_lan_level"),
     ]:
-        aux_pattern = str(root / "snapshot_month=*" / f"{glob_name}.parquet")
+        aux_pattern = (root / "snapshot_month=*" / f"{glob_name}.parquet").as_posix()
         if list(root.glob(f"snapshot_month=*/{glob_name}.parquet")):
             con.execute(f"""
                 CREATE OR REPLACE VIEW {aux_name} AS
-                SELECT *, regexp_extract(filename, 'snapshot_month=([^/]+)', 1) AS snapshot_month
+                SELECT *, regexp_extract(filename, 'snapshot_month=([0-9]{{4}}-[0-9]{{2}})', 1) AS snapshot_month
                 FROM read_parquet('{aux_pattern}', filename=true, hive_partitioning=false)
             """)
 

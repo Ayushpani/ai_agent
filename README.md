@@ -112,6 +112,29 @@ event per pipeline stage as it actually starts/finishes — what the Next.js
 UI's live step timeline is built on. `GET /download/{session_id}` returns
 the Excel workbook for the last chartable result in that session.
 
+## When the generated SQL is wrong
+
+Free-tier models get DuckDB specifics wrong, so the graph plans for it
+rather than treating it as an exception. A statement that fails
+validation or execution goes back to the generator once, with the
+engine's own error and the failed statement attached:
+
+```
+Execute -> (failed) -> Repair SQL -> Execute -> ...
+```
+
+One extra call, capped — a model that can't fix itself fails the turn
+with a readable message instead of looping on free quota. Nothing
+DuckDB or the validator raises escapes the node as a traceback; it
+becomes state the graph routes on
+(`tests/integration/test_sql_repair.py`).
+
+The generator is also given the snapshot months that actually exist, so
+"the last six months" resolves against real partitions rather than
+invented date literals. `snapshot_month` is a `'YYYY-MM'` TEXT column
+and is compared as a string — it is never cast to a date, in the
+prompt, in the probes, or in the partition reader.
+
 ## Deep research
 
 Standard depth answers a question with one query. Deep depth — opt-in per

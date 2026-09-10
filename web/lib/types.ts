@@ -8,6 +8,7 @@ export type StageName =
   | "disambiguate"
   | "generate_sql"
   | "execute"
+  | "repair_sql"
   | "handled_error"
   | "run_tools"
   | "plan_research"
