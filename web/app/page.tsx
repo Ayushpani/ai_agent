@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { ChatInput } from "@/components/ChatInput";
+import { ModeBanner } from "@/components/ModeBanner";
 import { UserTurn } from "@/components/UserTurn";
 import { AssistantTurn, type AssistantTurnData } from "@/components/AssistantTurn";
 import { StepState } from "@/components/StepTimeline";
@@ -140,14 +141,17 @@ export default function Home() {
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur">
-        <div className="mx-auto w-full max-w-5xl px-4 py-3">
-          <h1 className="text-[16px] font-semibold tracking-tight text-foreground">
-            Portfolio Intelligence Agent
-          </h1>
-          <p className="text-[12.5px] text-muted">
-            Every figure traces to a SQL execution or a deterministic calculation — never a
-            language-model token.
-          </p>
+        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[16px] font-semibold tracking-tight text-foreground">
+              Portfolio Intelligence Agent
+            </h1>
+            <p className="text-[12.5px] text-muted">
+              Every figure traces to a SQL execution or a deterministic calculation — never a
+              language-model token.
+            </p>
+          </div>
+          <ModeBanner />
         </div>
       </header>
 

@@ -41,7 +41,11 @@ required relief, not a nice-to-have.
 
 ## Setup
 
-Requires the backend running first (see the repo root README).
+Requires the backend running first (see the repo root README). If you
+start `scripts/mock_backend.py` rather than the real one, the header
+shows a "Demo mode" chip — that backend answers every question
+identically, which is otherwise indistinguishable from the real agent
+from inside the browser.
 
 ```bash
 cd web

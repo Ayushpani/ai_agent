@@ -63,14 +63,20 @@ Seed a synthetic portfolio:
 python scripts/seed_synthetic_data.py --months 8 --loans 2000
 ```
 
-Run the whole product with the four model calls mocked out — every other
-layer (SQL validation, access scoping, DuckDB, the statistical tools,
-the workbook builder) runs for real:
+Run the UI with the model calls stubbed — every other layer (SQL
+validation, access scoping, DuckDB, the statistical tools, the workbook
+builder) runs for real:
 
 ```bash
-python scripts/mock_backend.py        # terminal 1
-cd web && npm run dev                 # terminal 2
+python scripts/mock_backend.py --slow   # terminal 1
+cd web && npm run dev                   # terminal 2
 ```
+
+**The mock returns the same canned answer to every question.** It stubs
+the model calls and ignores what you typed, so it is for working on the
+interface, not for evaluating the agent — the UI shows a "Demo mode"
+chip while it is connected. For answers that actually vary, run the real
+backend (`uvicorn app.api.main:app --reload`) with your keys in `.env`.
 
 Or run the test suite, which exercises the full graph in both depths
 with the LLM stages mocked, so it needs no API keys and no network:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from typing import Any
 
 import pandas as pd
@@ -68,7 +69,12 @@ def get_current_employee(identity: EmployeeIdentity) -> EmployeeIdentity:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    """`mocked` tells the UI the model calls are canned, so it can say so
+    on screen. Without it, scripts/mock_backend.py looks identical to the
+    real thing right up until you notice every question returns the same
+    answer.
+    """
+    return {"status": "ok", "mocked": os.environ.get("PORTFOLIO_MOCK_MODE") == "1"}
 
 
 @app.post("/ask")

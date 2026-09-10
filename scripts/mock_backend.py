@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -128,12 +129,25 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
+    # The UI reads this off /health and shows a "Demo mode" chip, so it is
+    # obvious on screen — not just in this terminal — that the answers are
+    # canned.
+    os.environ["PORTFOLIO_MOCK_MODE"] = "1"
+
     lines = [
         "",
-        "  Portfolio Intelligence Agent — mock backend",
+        "  Portfolio Intelligence Agent — MOCK backend (demo fixture)",
+        "",
+        "  >> Every question returns the SAME canned answer, SQL and panels. <<",
+        "     The model calls are stubbed and ignore what you typed. This is",
+        "     for working on the UI, not for evaluating the agent.",
+        "",
+        "     For real answers that vary by question, stop this and run:",
+        "       uvicorn app.api.main:app --reload",
+        "     (needs OPENROUTER_API_KEY and the model slugs in .env)",
         "",
         f"  API:      http://localhost:{args.port}",
-        "  Models:   mocked (no API keys, no free-tier quota used)",
+        "  Models:   STUBBED — no API keys used, no reasoning performed",
         f"  Latency:  {'simulated per stage' if args.slow else 'none — pass --slow to see streaming states'}",
     ]
     lines += [f"  {line}" for line in preflight()]
