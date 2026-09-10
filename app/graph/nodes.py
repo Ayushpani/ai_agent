@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import time
 
+from app.graph.llm_output import extract_json_object
 from app.graph.model_router import call_stage
 from app.graph.state import GraphState
 from app.models.schemas import (
@@ -68,7 +69,13 @@ def _with_model_id(state: GraphState, stage: str, model_id: str) -> dict:
 
 def router_node(state: GraphState) -> dict:
     raw = call_stage("router", load_prompt("router"), state["question"])
-    parsed = json.loads(raw)
+    parsed = extract_json_object(raw)
+    if parsed is None:
+        raise ValueError(
+            f"Router response contained no parseable JSON object "
+            f"(model may be a reasoning variant that never reached its "
+            f"final answer): {raw[:300]!r}"
+        )
     router_output = RouterOutput.model_validate(parsed)
 
     update: dict = {
@@ -99,8 +106,8 @@ def sql_generator_node(state: GraphState) -> dict:
     raw = call_stage("sql_generator", load_prompt("sql_generator"), context, max_tokens=3072)
     raw_stripped = raw.strip()
 
-    if raw_stripped.startswith("{"):
-        error_payload = json.loads(raw_stripped)
+    error_payload = extract_json_object(raw_stripped)
+    if error_payload is not None and "error" in error_payload:
         sql_output = SQLGeneratorOutput(error=SQLGeneratorError.model_validate(error_payload))
     else:
         extracted_sql = extract_sql_statement(raw_stripped)
