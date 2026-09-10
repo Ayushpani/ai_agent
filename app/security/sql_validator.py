@@ -11,6 +11,7 @@ This module has no LLM dependency and is unit-testable standalone.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 import sqlglot
@@ -20,6 +21,58 @@ ACCESS_SCOPE_PLACEHOLDER = "{ACCESS_SCOPE_FILTER}"
 
 DEFAULT_ROW_CAP = 100_000
 DEFAULT_TIMEOUT_SECONDS = 30
+
+_FENCE_RE = re.compile(r"```(?:sql)?\s*(.*?)```", re.IGNORECASE | re.DOTALL)
+# A "tempered dot" — (?!\n\s*\n). — matches any character, including a
+# newline, as long as a blank line doesn't start at that position. This
+# keeps the match from jumping across a paragraph break to reach a LATER
+# unrelated SELECT's placeholder, which plain ".*?" with DOTALL would do.
+_SELECT_WITH_PLACEHOLDER_RE = re.compile(
+    r"(?is)select\b(?:(?!\n\s*\n).)*?" + re.escape(ACCESS_SCOPE_PLACEHOLDER)
+    + r"(?:(?!\n\s*\n).)*?(?=\n\s*\n|```|$)"
+)
+
+
+def extract_sql_statement(raw: str) -> str | None:
+    """Best-effort extraction of the actual SQL statement out of a raw
+    LLM response that may not have followed the "output only SQL"
+    instruction — most notably, "reasoning" model variants that emit a
+    chain-of-thought preamble regardless of the system prompt. Returns
+    None if nothing plausible is found, so the caller can fail with a
+    clear error instead of feeding prose into the SQL parser.
+
+    Preference order: a fenced ```sql ... ``` block that starts with
+    SELECT, then the last SELECT-containing-the-placeholder run in the
+    raw text (models that reason typically state their real answer last),
+    then the raw text itself if it already looks like clean SQL.
+    """
+    raw = raw.strip()
+
+    for block in reversed(_FENCE_RE.findall(raw)):
+        block = block.strip()
+        if re.match(r"(?i)^select\b", block) and _looks_like_sql(block):
+            return block
+
+    matches = list(_SELECT_WITH_PLACEHOLDER_RE.finditer(raw))
+    for match in reversed(matches):
+        candidate = match.group(0).strip()
+        if _looks_like_sql(candidate):
+            return candidate
+
+    if re.match(r"(?i)^select\b", raw) and ACCESS_SCOPE_PLACEHOLDER in raw and _looks_like_sql(raw):
+        return raw
+
+    return None
+
+
+def _looks_like_sql(candidate: str) -> bool:
+    """A real SELECT always has a FROM clause; a reasoning model's prose
+    ABOUT the instructions (e.g. 'Generate one SELECT statement, include
+    {ACCESS_SCOPE_FILTER} in WHERE...') matches the SELECT+placeholder
+    pattern but is not actually SQL — it has no FROM. This is the cheapest
+    reliable signal to tell the two apart without a full parse attempt.
+    """
+    return bool(re.search(r"(?i)\bfrom\b", candidate))
 
 
 class SQLValidationError(ValueError):

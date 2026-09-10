@@ -27,7 +27,7 @@ from app.models.schemas import (
     SQLGeneratorOutput,
 )
 from app.prompts import load_prompt
-from app.security.sql_validator import ACCESS_SCOPE_PLACEHOLDER
+from app.security.sql_validator import extract_sql_statement
 from app.tools.chart import QueryShape, choose_chart_type
 from app.tools.data import get_schema_card, run_sql
 from app.tools.dq import data_quality_scan, sanity_check_trend
@@ -93,18 +93,31 @@ def sql_generator_node(state: GraphState) -> dict:
         f"Intent metadata: {state['router_output'].model_dump_json()}\n"
         f"Schema card: {json.dumps(schema_card)}\n"
     )
-    raw = call_stage("sql_generator", load_prompt("sql_generator"), context)
+    # Reasoning-style free models spend a large chunk of their budget on a
+    # chain-of-thought preamble before emitting the actual SQL — 1024
+    # tokens (the default) can get cut off before they ever reach it.
+    raw = call_stage("sql_generator", load_prompt("sql_generator"), context, max_tokens=3072)
     raw_stripped = raw.strip()
 
     if raw_stripped.startswith("{"):
         error_payload = json.loads(raw_stripped)
         sql_output = SQLGeneratorOutput(error=SQLGeneratorError.model_validate(error_payload))
-    elif ACCESS_SCOPE_PLACEHOLDER not in raw_stripped:
-        sql_output = SQLGeneratorOutput(
-            error=SQLGeneratorError(error="insufficient_schema", missing=ACCESS_SCOPE_PLACEHOLDER)
-        )
     else:
-        sql_output = SQLGeneratorOutput(sql=raw_stripped)
+        extracted_sql = extract_sql_statement(raw_stripped)
+        if extracted_sql is None:
+            sql_output = SQLGeneratorOutput(
+                error=SQLGeneratorError(
+                    error="insufficient_schema",
+                    missing=(
+                        "model response contained no parseable SQL statement "
+                        "with the required {ACCESS_SCOPE_FILTER} placeholder "
+                        "(model may be a reasoning variant that never reached "
+                        "its final answer within the token budget)"
+                    ),
+                )
+            )
+        else:
+            sql_output = SQLGeneratorOutput(sql=extracted_sql)
 
     return {
         "sql_output": sql_output,
